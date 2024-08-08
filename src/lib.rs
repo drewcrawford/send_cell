@@ -1,5 +1,5 @@
 mod send_cell;
-mod sync_cell;
+pub mod sync_cell;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
