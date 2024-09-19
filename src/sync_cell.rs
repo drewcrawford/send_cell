@@ -1,6 +1,8 @@
+use std::fmt::Debug;
 
 /**
-A cell that can be sent between threads.
+A cell that can be shared between threads, even when its underlying data cannot be.
+
 */
 pub struct SyncCell<T>(T);
 
@@ -14,7 +16,7 @@ impl <T> SyncCell<T> {
     Gets the underlying value.
 
     # Safety
-    You must verify the Sync requirements of the underlying type.
+    You must guarantee that whatever you are doing with the value is actually threadsafe.
     */
     pub unsafe fn get(&self) -> &T {
         &self.0
@@ -22,7 +24,8 @@ impl <T> SyncCell<T> {
     /**
     Gets the underlying value mutably.
 
-
+    This is safe because the borrowchecker guarantees we have the only reference.
+    For other cases, you may want to pair [get] with interior mutability.
     */
     pub fn get_mut(&mut self) -> &mut T {
         //I think this should be safe, because we are the only ones with access to the inner value?
@@ -43,24 +46,12 @@ impl <T> SyncCell<T> {
 
 }
 
-impl<T: Clone> SyncCell<T> {
-    /**
-    Clones the underlying data.
-
-    # Safety
-    You must verify the Sync requirements of the underlying type.  In particular, sending a clone
-    to a different thread may not be safe.
-    */
-    pub unsafe fn unchecked_clone(&self) -> Self {
-        SyncCell(self.0.clone())
-    }
-}
 
 /*
 Design note about traits.
 
 In general, &self functions cannot be implemented in Safe rust.  This rules out Debug, Clone, Copy,
-PartialEq, Eq, PartialOrd, Ord, Hash,AsRef.  An unsafe `unchecked_clone` is provided.  In general,
+PartialEq, Eq, PartialOrd, Ord, Hash,AsRef.   In general,
 chain through calls to the unsafe fn `get()`.
 
 Default,From can be implemented as they work on owning types.
@@ -71,9 +62,16 @@ DerefMut can't be implemented due to lack of deref type.
 
  */
 
+impl<T> Debug for SyncCell<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        //we can't use the value here since we can't guarantee it's safe to do so.
+        //but we can use the type name
+        f.debug_tuple("SyncCell")
+            .field(&std::any::type_name::<T>())
+            .finish()
 
-
-
+    }
+}
 
 impl<T: Default> SyncCell<T> {
     /**
