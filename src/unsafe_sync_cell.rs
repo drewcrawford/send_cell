@@ -4,13 +4,13 @@ use std::fmt::Debug;
 A cell that can be shared between threads, even when its underlying data cannot be.
 
 */
-pub struct SyncCell<T>(T);
+pub struct UnsafeSyncCell<T>(T);
 
-unsafe impl<T> Sync for SyncCell<T> {}
+unsafe impl<T> Sync for UnsafeSyncCell<T> {}
 
-impl <T> SyncCell<T> {
+impl <T> UnsafeSyncCell<T> {
     pub fn new(value: T) -> Self {
-        SyncCell(value)
+        UnsafeSyncCell(value)
     }
     /**
     Gets the underlying value.
@@ -62,7 +62,7 @@ DerefMut can't be implemented due to lack of deref type.
 
  */
 
-impl<T> Debug for SyncCell<T> {
+impl<T> Debug for UnsafeSyncCell<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         //we can't use the value here since we can't guarantee it's safe to do so.
         //but we can use the type name
@@ -73,22 +73,22 @@ impl<T> Debug for SyncCell<T> {
     }
 }
 
-impl<T: Default> SyncCell<T> {
+impl<T: Default> UnsafeSyncCell<T> {
     /**
     Creates a new SyncCell with the default value.
     */
     pub fn default() -> Self {
-        SyncCell(T::default())
+        UnsafeSyncCell(T::default())
     }
 }
 
-impl<T> From<T> for SyncCell<T> {
+impl<T> From<T> for UnsafeSyncCell<T> {
     fn from(value: T) -> Self {
-        SyncCell(value)
+        UnsafeSyncCell(value)
     }
 }
 
-impl<T> AsMut<T> for SyncCell<T> {
+impl<T> AsMut<T> for UnsafeSyncCell<T> {
     fn as_mut(&mut self) -> &mut T {
         self.get_mut()
     }

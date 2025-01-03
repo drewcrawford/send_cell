@@ -1,106 +1,135 @@
-use std::fmt::Debug;
+/*!
+A runtime checked sending cell.
 
-/**
-A cell that can be sent across threads,
-even if the underlying datatype is not Send.
+This verifies that all use of the resulting value occurs on the same thread.
 */
 
-pub struct SendCell<T>(T);
-unsafe impl<T> Send for SendCell<T> {}
+use std::fmt::{Debug, Formatter};
+use std::ops::{Deref, DerefMut};
+use std::thread::ThreadId;
+use crate::unsafe_send_cell::UnsafeSendCell;
+
+pub struct SendCell<T> {
+    inner: Option<UnsafeSendCell<T>>,
+    thread_id: ThreadId,
+}
 
 impl <T> SendCell<T> {
     /**
     Creates a new cell.
 
-# Safety
-    You must verify that e.g. Drop is safe for the underlying type.
+    This constructor wil "remember" the current thread.  Subsequent access
+    will be checked against the constructed value.
 */
-    pub unsafe fn new_unchecked(value: T) -> Self {
-        SendCell(value)
+    #[inline]
+    pub fn new(t: T) -> SendCell<T> {
+        SendCell {
+            //safe because drop is verified
+            inner: Some(unsafe{UnsafeSendCell::new_unchecked(t)}),
+            thread_id: crate::sys::thread::current().id(),
+        }
     }
 
     /**
-    Creates a new cell.
+    Unsafely accesses the underlying value, without checking the accessing thread.
 */
-    pub fn new(value: T) -> Self {
-        assert!(!std::mem::needs_drop::<T>(), "Cannot use safe constructor for types that implement Drop; use new_unchecked instead. ");
-        SendCell(value)
+    #[inline]
+    pub unsafe fn get_unchecked(&self) -> &T {
+        &*self.inner.as_ref().expect("gone").get()
     }
     /**
-    Gets the underlying value.
+    Access the underlying value.
 
-    # Safety
-    Either
-    a) the cell is never really sent, so the use of the cell is spurious here
-    b) the cell is sent, but whatever we're doing is actually safe in some non-Rust way.
-    */
-    pub unsafe fn get(&self) -> &T {
-        &self.0
-    }
-    /**
-    Gets the underlying value mutably.
+    # Panics
 
-    # Safety
-    Either
-    a) the cell is never really sent, so the use of the cell is spurious here
-    b) the cell is sent, but whatever we're doing is actually safe in some non-Rust way.
-    */
-    pub unsafe fn get_mut(&mut self) -> &mut T {
-        //I think this should be safe, because we are the only ones with access to the inner value?
-        &mut self.0
+    This function will panic if accessed from a different thread than the cell was created on.
+*/
+    #[inline]
+    pub fn get(&self) -> &T {
+        assert_eq!(self.thread_id, crate::sys::thread::current().id(), "Access SendCell from incorrect thread");
+        //safe with assertion
+        unsafe { self.get_unchecked() }
     }
 
     /**
-    Consumes the cell and returns the inner value.
+    Unsafely accesses the underlying value, without checking the accessing thread.
+*/
+    #[inline]
+    pub unsafe fn get_unchecked_mut(&mut self) -> &mut T {
+        &mut *self.inner.as_mut().expect("gone").get_mut()
+    }
 
-    # Safety
-    Either
-    a) the cell is never really sent, so the use of the cell is spurious here
-    b) the cell is sent, but whatever we're doing is actually safe in some non-Rust way.
+    /**
+    Accesses the underlying value.
+
+    This function will panic if accessed from a different thread than the cell was created on.
+*/
+    #[inline]
+    pub fn get_mut(&mut self) -> &mut T {
+        assert_eq!(self.thread_id, crate::sys::thread::current().id(), "Access SendCell from incorrect thread");
+        unsafe { self.get_unchecked_mut()}
+    }
+
+    /**
+    Unsafely accesses the underlying value, without checking the accessing thread.
     */
-    pub unsafe fn into_inner(self) -> T {
-        //I think this should be safe, because we are the only ones with access to the inner value?
-        self.0
+    #[inline]
+    pub unsafe fn into_unchecked_inner(mut self)  -> T {
+        self.inner.take().expect("gone").into_inner()
+    }
+    /**
+    Accesses the underlying value.
+
+    This function will panic if accessed from a different thread than the cell was created on.
+    */
+    #[inline]
+    pub fn into_inner(self) -> T {
+        assert_eq!(self.thread_id, crate::sys::thread::current().id());
+        unsafe { self.into_unchecked_inner() }
+    }
+
+}
+
+impl<T> Drop for SendCell<T> {
+    fn drop(&mut self) {
+        if std::mem::needs_drop::<T>() {
+            assert_eq!(self.thread_id, crate::sys::thread::current().id(), "Access SendCell from incorrect thread");
+        }
     }
 }
 
-/*
-Design note about traits.
-
-In general, &self functions cannot be implemented in Safe rust.  This rules out Debug, Clone, Copy,
-PartialEq, Eq, PartialOrd, Ord, Hash,AsRef.   In general,
-chain through calls to the unsafe fn `get()`.
-
-For send, &mut and self cannot be implemented either – the idea is that the underlying type
-is not necessarily portable across threads, implementing Send allows us to do so, and a value so
-ported across threads is not necessarily valid on a new thread.
-
-Default,From can be implemented as they work on owning types.
-
-AsMut can be implemented, since we have an exclusive reference.
-
-DerefMut can't be implemented due to lack of deref type.
-
- */
-
-impl<T: Default> Default for SendCell<T> {
-    fn default() -> Self {
-        SendCell(Default::default())
+//implement boilerplate
+impl<T: Debug> Debug for SendCell<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.get().fmt(f)
     }
 }
 
-impl<T> From<T> for SendCell<T> {
-    fn from(value: T) -> Self {
-        SendCell(value)
+
+impl<T> AsRef<T> for SendCell<T> {
+    fn as_ref(&self) -> &T {
+        self.get()
     }
 }
 
-impl<T> Debug for SendCell<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        //note that we can't safely access the underlying field here – it may have been sent.
-        f.debug_tuple("SendCell")
-            .field(&std::any::type_name::<T>())
-            .finish()
+impl<T> AsMut<T> for SendCell<T> {
+    fn as_mut(&mut self) -> &mut T {
+        self.get_mut()
     }
 }
+
+impl<T> Deref for SendCell<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        self.get()
+    }
+}
+
+impl<T> DerefMut for SendCell<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.get_mut()
+    }
+}
+
+
 
