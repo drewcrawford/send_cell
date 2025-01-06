@@ -9,5 +9,5 @@ jobs:
       - name: Build wasm
         run: |
           rustup install nightly
-          rustup target add wasm32-unknown-unknown
+          rustup +nightly target add wasm32-unknown-unknown
           CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER="wasm-bindgen-test-runner" cargo +nightly test --target wasm32-unknown-unknown
