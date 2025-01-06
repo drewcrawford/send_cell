@@ -36,7 +36,7 @@ impl <T> UnsafeSyncCell<T> {
     Gets the underlying value mutably.
 
     This is safe because the borrowchecker guarantees we have the only reference.
-    For other cases, you may want to pair [get] with interior mutability.
+    For other cases, you may want to pair [Self::get] with interior mutability.
     */
     pub fn get_mut(&mut self) -> &mut T {
         //I think this should be safe, because we are the only ones with access to the inner value?
