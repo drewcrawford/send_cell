@@ -2,6 +2,14 @@
 name = "send_cell"
 version = "0.1.0"
 edition = "2021"
+authors = ["Drew Crawford <drew@sealedabstract.com>"]
+description = "Safe and unsafe cells implementing Send/Sync"
+repository = "https://github.com/drewcrawford/send_cell"
+homepage = "https://sealedabstract.com/code/send_cell"
+license = "MIT OR Apache-2.0"
+keywords = ["send", "cell", "non-send", "send-wrapper"]
+categories = ["concurrency", "rust-patterns","wasm"]
+rust-version = "1.78.0"
 
 [dependencies]
 

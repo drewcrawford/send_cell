@@ -5,6 +5,10 @@ A cell that can be sent across threads,
 even if the underlying datatype is not Send.
 
 Generally, all use of the cell is unsafe.
+
+This cell type is appropriate for cases where the values is "not actually sent", but Rust thinks it is.
+
+For cases where it might really be sent after all, consider using [crate::send_cell].
 */
 
 pub struct UnsafeSendCell<T>(T);
@@ -12,9 +16,10 @@ unsafe impl<T> Send for UnsafeSendCell<T> {}
 
 impl <T> UnsafeSendCell<T> {
     /**
+
     Creates a new cell.
 
-# Safety
+    # Safety
     You must verify that e.g. Drop is safe for the underlying type.
 */
     #[inline]

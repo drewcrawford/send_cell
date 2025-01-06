@@ -1,0 +1,4 @@
+send_cell https://sealedabstract.com/code/send_cell
+Safe and unsafe cells implementing Send/Sync
+Copyright 2025 Drew Crawford.
+

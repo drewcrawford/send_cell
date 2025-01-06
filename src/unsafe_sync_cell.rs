@@ -3,6 +3,11 @@ use std::fmt::Debug;
 /**
 A cell that can be shared between threads, even when its underlying data cannot be.
 
+This cell type is appropriate for cases where the values is "not actually shared between threads",
+but Rust thinks it is.
+
+For cases where it might really be shared after all, consider using [crate::sync_cell].
+
 */
 pub struct UnsafeSyncCell<T>(T);
 

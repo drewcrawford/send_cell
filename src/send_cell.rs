@@ -1,5 +1,5 @@
 /*!
-A runtime checked sending cell.
+A runtime-checked sending cell.
 
 This verifies that all use of the resulting value occurs on the same thread.
 */
