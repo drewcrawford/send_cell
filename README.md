@@ -1,4 +1,4 @@
-# send_cell
+# send_cells
 
 
 Cell types that can be sent/shared between threads, even if the underlying data cannot.

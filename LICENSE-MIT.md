@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2025 Drew Crawford; https://sealedabstract.com/code/send_cell
+Copyright (c) 2025 Drew Crawford; https://sealedabstract.com/code/send_cells
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
