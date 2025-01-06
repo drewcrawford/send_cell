@@ -93,7 +93,7 @@ impl <T> SendCell<T> {
 impl<T> Drop for SendCell<T> {
     fn drop(&mut self) {
         if std::mem::needs_drop::<T>() {
-            assert_eq!(self.thread_id, crate::sys::thread::current().id(), "Access SendCell from incorrect thread");
+            assert_eq!(self.thread_id, crate::sys::thread::current().id(), "Drop SendCell from incorrect thread");
         }
     }
 }
