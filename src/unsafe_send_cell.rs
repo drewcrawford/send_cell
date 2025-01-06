@@ -3,6 +3,8 @@ use std::fmt::Debug;
 /**
 A cell that can be sent across threads,
 even if the underlying datatype is not Send.
+
+Generally, all use of the cell is unsafe.
 */
 
 pub struct UnsafeSendCell<T>(T);
@@ -22,6 +24,10 @@ impl <T> UnsafeSendCell<T> {
 
     /**
     Creates a new cell.
+
+    # Safety
+
+    This function is safe because it verifies that the underlying type does not implement Drop.
 */
     #[inline]
     pub fn new(value: T) -> Self {
@@ -82,9 +88,6 @@ ported across threads is not necessarily valid on a new thread.
 
 Default,From can be implemented as they work on owning types.
 
-AsMut can be implemented, since we have an exclusive reference.
-
-DerefMut can't be implemented due to lack of deref type.
 
  */
 

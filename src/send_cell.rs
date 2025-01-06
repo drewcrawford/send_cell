@@ -131,5 +131,17 @@ impl<T> DerefMut for SendCell<T> {
     }
 }
 
+//for eq, hash, etc, we generally rely on the underlying deref
+impl<T: Default> Default for SendCell<T> {
+    fn default() -> SendCell<T> {
+        SendCell::new(Default::default())
+    }
+}
+impl<T> From<T> for SendCell<T> {
+    fn from(value: T) -> Self {
+        SendCell::new(value)
+    }
+}
+
 
 

@@ -9,6 +9,10 @@ pub struct UnsafeSyncCell<T>(T);
 unsafe impl<T> Sync for UnsafeSyncCell<T> {}
 
 impl <T> UnsafeSyncCell<T> {
+    /**
+    Creates a new cell.
+*/
+    #[inline]
     pub fn new(value: T) -> Self {
         UnsafeSyncCell(value)
     }
@@ -40,10 +44,6 @@ impl <T> UnsafeSyncCell<T> {
         //I think this should be safe, because we are the only ones with access to the inner value?
         self.0
     }
-
-
-
-
 }
 
 
@@ -69,7 +69,6 @@ impl<T> Debug for UnsafeSyncCell<T> {
         f.debug_tuple("SyncCell")
             .field(&std::any::type_name::<T>())
             .finish()
-
     }
 }
 
