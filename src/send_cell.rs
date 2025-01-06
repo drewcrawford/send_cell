@@ -1,3 +1,4 @@
+//SPDX-License-Identifier: MIT OR Apache-2.0
 /*!
 A runtime-checked sending cell.
 

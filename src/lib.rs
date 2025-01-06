@@ -1,3 +1,4 @@
+//SPDX-License-Identifier: MIT OR Apache-2.0
 /*!
 Cell types that can be sent/shared between threads, even if the underlying data cannot.
 
