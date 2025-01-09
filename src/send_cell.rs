@@ -89,6 +89,35 @@ impl <T> SendCell<T> {
         unsafe { self.into_unchecked_inner() }
     }
 
+    /**
+    Create a new cell with a new value, that will be runtime-checked against the same
+    thread as the original cell.
+
+    This is useful to implement simple clone/copy operations on the cell.
+
+    # Safety
+    * You must verify that the new value is safe to use on the same thread as the original cell.
+    * Including that it can be dropped on that thread.
+    */
+    #[inline]
+    pub unsafe fn preserving_cell_thread<U>(&self, new: U) -> SendCell<U> {
+        SendCell {
+            inner: Some(UnsafeSendCell::new_unchecked(new)),
+            thread_id: self.thread_id,
+        }
+    }
+
+    /**
+    Copies the cell, creating a new cell that can be used on the same thread.
+
+    # Safety
+    This ought to be safe for types that implement Copy, since the copy constructor does not
+    involve custom code.
+*/
+    pub fn copying(&self) -> Self where T: Copy {
+        unsafe { self.preserving_cell_thread(*self.get()) }
+    }
+
 }
 
 impl<T> Drop for SendCell<T> {
