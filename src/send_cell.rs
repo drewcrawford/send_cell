@@ -115,7 +115,7 @@ impl <T> SendCell<T> {
     involve custom code.
 */
     pub fn copying(&self) -> Self where T: Copy {
-        unsafe { self.preserving_cell_thread(*self.get()) }
+        unsafe { self.preserving_cell_thread(*self.get_unchecked()) }
     }
 
 }
