@@ -108,6 +108,7 @@ This wrapper allows futures that don't implement Send to be used in contexts
 that require Send futures, but the caller must ensure the future is not
 actually sent across threads.
 */
+#[derive(Debug)]
 pub struct UnsafeSendFuture<T>(T);
 
 unsafe impl<T> Send for UnsafeSendFuture<T> {}

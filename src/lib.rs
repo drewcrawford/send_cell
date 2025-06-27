@@ -31,3 +31,6 @@ pub mod unsafe_sync_cell;
 pub mod send_cell;
 mod sys;
 
+pub use send_cell::{SendCell, SendFuture};
+pub use unsafe_send_cell::{UnsafeSendCell, UnsafeSendFuture};
+

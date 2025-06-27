@@ -8,6 +8,9 @@ This verifies that all use of the resulting value occurs on the same thread.
 use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 use std::thread::ThreadId;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use crate::unsafe_send_cell::UnsafeSendCell;
 
 pub struct SendCell<T> {
@@ -120,6 +123,27 @@ impl <T> SendCell<T> {
 
 }
 
+impl<T: Future> SendCell<T> {
+    /**
+    Converts the cell into a future that implements Send with runtime thread checking.
+    
+    Unlike UnsafeSendCell's into_future(), this method creates a future that will
+    panic if polled from a different thread than the one where the SendCell was created.
+    This provides safe cross-thread future usage by enforcing thread safety at runtime.
+    
+    # Panics
+    
+    The returned future will panic if polled from a different thread than the one
+    where this SendCell was created.
+    */
+    pub fn into_future(mut self) -> SendFuture<T> {
+        SendFuture {
+            inner: self.inner.take().expect("inner value missing"),
+            thread_id: self.thread_id,
+        }
+    }
+}
+
 impl<T> Drop for SendCell<T> {
     fn drop(&mut self) {
         if std::mem::needs_drop::<T>() {
@@ -170,6 +194,167 @@ impl<T: Default> Default for SendCell<T> {
 impl<T> From<T> for SendCell<T> {
     fn from(value: T) -> Self {
         SendCell::new(value)
+    }
+}
+
+/**
+A future wrapper that implements Send with runtime thread checking.
+
+This wrapper allows futures to be used in contexts that require Send futures,
+while ensuring thread safety by checking that poll() is only called from the
+correct thread. Unlike UnsafeSendFuture, this provides safe cross-thread usage
+by panicking if accessed from the wrong thread.
+*/
+#[derive(Debug)]
+pub struct SendFuture<T> {
+    inner: UnsafeSendCell<T>,
+    thread_id: ThreadId,
+}
+
+unsafe impl<T> Send for SendFuture<T> {}
+
+impl<T: Future> Future for SendFuture<T> {
+    type Output = T::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // Runtime thread check - panic if called from wrong thread
+        assert_eq!(
+            self.thread_id, 
+            crate::sys::thread::current().id(), 
+            "SendFuture polled from incorrect thread"
+        );
+        
+        // SAFETY: After the thread check, we can safely access the inner future
+        // using the same technique as UnsafeSendFuture
+        let inner = unsafe { 
+            let self_mut = self.get_unchecked_mut();
+            Pin::new_unchecked(self_mut.inner.get_mut())
+        };
+        inner.poll(cx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::rc::Rc;
+    use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+    use std::pin::Pin;
+
+    // A future that is NOT Send because it contains Rc<T>
+    struct NonSendFuture {
+        _data: Rc<i32>,
+        ready: bool,
+    }
+
+    impl NonSendFuture {
+        fn new(value: i32) -> Self {
+            Self {
+                _data: Rc::new(value),
+                ready: false,
+            }
+        }
+    }
+
+    impl Future for NonSendFuture {
+        type Output = i32;
+
+        fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+            if self.ready {
+                Poll::Ready(42)
+            } else {
+                self.ready = true;
+                Poll::Pending
+            }
+        }
+    }
+
+    // Helper function to verify a type implements Send
+    fn assert_send<T: Send>(_: &T) {}
+
+    #[test]
+    fn test_send_cell_into_future_is_send() {
+        // Create a non-Send future
+        let non_send_future = NonSendFuture::new(42);
+        
+        // Wrap it in SendCell
+        let cell = SendCell::new(non_send_future);
+        
+        // Convert to a Send future
+        let send_future = cell.into_future();
+        
+        // Verify the resulting future is Send
+        assert_send(&send_future);
+    }
+
+    #[test]
+    fn test_send_future_functionality() {
+        // Create a no-op waker for testing
+        static VTABLE: RawWakerVTable = RawWakerVTable::new(
+            |_| RawWaker::new(std::ptr::null(), &VTABLE),
+            |_| {},
+            |_| {},
+            |_| {},
+        );
+        let raw_waker = RawWaker::new(std::ptr::null(), &VTABLE);
+        let waker = unsafe { Waker::from_raw(raw_waker) };
+        let mut context = Context::from_waker(&waker);
+        
+        // Create a non-Send future wrapped in SendCell
+        let non_send_future = NonSendFuture::new(42);
+        let cell = SendCell::new(non_send_future);
+        let mut send_future = cell.into_future();
+        
+        // Test that the future still works correctly
+        let pinned = Pin::new(&mut send_future);
+        match pinned.poll(&mut context) {
+            Poll::Pending => {
+                // First poll should return Pending
+                let pinned = Pin::new(&mut send_future);
+                match pinned.poll(&mut context) {
+                    Poll::Ready(value) => assert_eq!(value, 42),
+                    Poll::Pending => panic!("Expected Ready on second poll"),
+                }
+            }
+            Poll::Ready(value) => assert_eq!(value, 42),
+        }
+    }
+
+    #[test]
+    fn test_send_future_cross_thread_panic() {
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+        
+        // Create future on main thread
+        let non_send_future = NonSendFuture::new(42);
+        let cell = SendCell::new(non_send_future);
+        let send_future = cell.into_future();
+        
+        // Share the future with another thread
+        let future_mutex = Arc::new(Mutex::new(send_future));
+        let future_clone = Arc::clone(&future_mutex);
+        
+        // Try to poll from a different thread - this should panic
+        let handle = thread::spawn(move || {
+            // Create a no-op waker inside the thread
+            static VTABLE: RawWakerVTable = RawWakerVTable::new(
+                |_| RawWaker::new(std::ptr::null(), &VTABLE),
+                |_| {},
+                |_| {},
+                |_| {},
+            );
+            let raw_waker = RawWaker::new(std::ptr::null(), &VTABLE);
+            let waker = unsafe { Waker::from_raw(raw_waker) };
+            let mut context = Context::from_waker(&waker);
+            
+            let mut future_guard = future_clone.lock().unwrap();
+            let pinned = Pin::new(&mut *future_guard);
+            let _ = pinned.poll(&mut context);
+        });
+        
+        // Verify that the thread panicked
+        let result = handle.join();
+        assert!(result.is_err(), "Expected thread to panic when polling SendFuture from incorrect thread");
     }
 }
 
