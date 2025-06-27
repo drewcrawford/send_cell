@@ -1,6 +1,9 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
 use std::fmt::Debug;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /**
 A cell that can be sent across threads,
@@ -82,6 +85,43 @@ impl <T> UnsafeSendCell<T> {
     }
 }
 
+impl<T: Future> UnsafeSendCell<T> {
+    /**
+    Converts the cell into a future that implements Send.
+
+    # Safety
+    The caller must verify that the future is not "actually" sent across threads.
+    This method creates a wrapper that unsafely implements Send for the underlying future,
+    which may violate Rust's memory safety guarantees if the future is truly sent
+    between threads and accessed concurrently.
+    */
+    #[inline]
+    pub unsafe fn into_future(self) -> UnsafeSendFuture<T> {
+        UnsafeSendFuture(self.0)
+    }
+}
+
+/**
+A future wrapper that unsafely implements Send.
+
+This wrapper allows futures that don't implement Send to be used in contexts
+that require Send futures, but the caller must ensure the future is not
+actually sent across threads.
+*/
+pub struct UnsafeSendFuture<T>(T);
+
+unsafe impl<T> Send for UnsafeSendFuture<T> {}
+
+impl<T: Future> Future for UnsafeSendFuture<T> {
+    type Output = T::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: We're maintaining the pinning invariant by not moving the inner future
+        let inner = unsafe { self.map_unchecked_mut(|s| &mut s.0) };
+        inner.poll(cx)
+    }
+}
+
 /*
 Design note about traits.
 
@@ -116,6 +156,103 @@ impl<T> Debug for UnsafeSendCell<T> {
         f.debug_tuple("SendCell")
             .field(&std::any::type_name::<T>())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::rc::Rc;
+    use std::task::{Context, Poll};
+    use std::pin::Pin;
+
+    // A future that is NOT Send because it contains Rc<T>
+    struct NonSendFuture {
+        _data: Rc<i32>,
+        ready: bool,
+    }
+
+    impl NonSendFuture {
+        fn new(value: i32) -> Self {
+            Self {
+                _data: Rc::new(value),
+                ready: false,
+            }
+        }
+    }
+
+    impl Future for NonSendFuture {
+        type Output = i32;
+
+        fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+            if self.ready {
+                Poll::Ready(42)
+            } else {
+                self.ready = true;
+                Poll::Pending
+            }
+        }
+    }
+
+    // Helper function to verify a type implements Send
+    fn assert_send<T: Send>(_: &T) {}
+
+    #[test]
+    fn test_non_send_future_to_send_future() {
+        // Create a non-Send future
+        let non_send_future = NonSendFuture::new(42);
+        
+        // Verify it's not Send (this would fail to compile if uncommented)
+        // assert_send(&non_send_future);
+        
+        // Wrap it in UnsafeSendCell
+        let cell = unsafe { UnsafeSendCell::new_unchecked(non_send_future) };
+        
+        // Convert to a Send future
+        let send_future = unsafe { cell.into_future() };
+        
+        // Verify the resulting future is Send
+        assert_send(&send_future);
+        
+        // This demonstrates that we can now use this future in Send contexts
+        // For example, we could spawn it on a thread pool (though we won't actually do that here)
+    }
+
+    #[test]
+    fn test_future_functionality_preserved() {
+        use std::task::{RawWaker, RawWakerVTable, Waker};
+        
+        // Create a non-Send future
+        let non_send_future = NonSendFuture::new(42);
+        
+        // Wrap and convert
+        let cell = unsafe { UnsafeSendCell::new_unchecked(non_send_future) };
+        let mut send_future = unsafe { cell.into_future() };
+        
+        // Create a no-op waker for testing
+        static VTABLE: RawWakerVTable = RawWakerVTable::new(
+            |_| RawWaker::new(std::ptr::null(), &VTABLE),
+            |_| {},
+            |_| {},
+            |_| {},
+        );
+        let raw_waker = RawWaker::new(std::ptr::null(), &VTABLE);
+        let waker = unsafe { Waker::from_raw(raw_waker) };
+        let mut context = Context::from_waker(&waker);
+        
+        // Test that the future still works correctly
+        let pinned = Pin::new(&mut send_future);
+        match pinned.poll(&mut context) {
+            Poll::Pending => {
+                // First poll should return Pending
+                let pinned = Pin::new(&mut send_future);
+                match pinned.poll(&mut context) {
+                    Poll::Ready(value) => assert_eq!(value, 42),
+                    Poll::Pending => panic!("Expected Ready on second poll"),
+                }
+            }
+            Poll::Ready(value) => assert_eq!(value, 42),
+        }
     }
 }
 
