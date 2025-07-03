@@ -29,8 +29,10 @@ This crate has full `wasm32-unknown-unknown` support for runtime thread checks a
 pub mod unsafe_send_cell;
 pub mod unsafe_sync_cell;
 pub mod send_cell;
+pub mod sync_cell;
 mod sys;
 
 pub use send_cell::{SendCell, SendFuture};
+pub use sync_cell::SyncCell;
 pub use unsafe_send_cell::{UnsafeSendCell, UnsafeSendFuture};
 

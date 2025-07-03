@@ -1,5 +1,6 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
+use std::cell::UnsafeCell;
 use std::fmt::Debug;
 
 /**
@@ -11,7 +12,7 @@ but Rust thinks it is.
 For cases where it might really be shared after all, consider using [crate::sync_cell].
 
 */
-pub struct UnsafeSyncCell<T>(T);
+pub struct UnsafeSyncCell<T>(UnsafeCell<T>);
 
 unsafe impl<T> Sync for UnsafeSyncCell<T> {}
 
@@ -21,7 +22,7 @@ impl <T> UnsafeSyncCell<T> {
 */
     #[inline]
     pub fn new(value: T) -> Self {
-        UnsafeSyncCell(value)
+        UnsafeSyncCell(UnsafeCell::new(value))
     }
     /**
     Gets the underlying value.
@@ -30,7 +31,7 @@ impl <T> UnsafeSyncCell<T> {
     You must guarantee that whatever you are doing with the value is actually threadsafe.
     */
     pub unsafe fn get(&self) -> &T {
-        &self.0
+        &*self.0.get()
     }
     /**
     Gets the underlying value mutably.
@@ -40,8 +41,18 @@ impl <T> UnsafeSyncCell<T> {
     */
     pub fn get_mut(&mut self) -> &mut T {
         //I think this should be safe, because we are the only ones with access to the inner value?
-        &mut self.0
+        self.0.get_mut()
     }
+    
+    /**
+    Gets the underlying value mutably, without requiring a mutable reference to the cell.
+*/
+    pub unsafe fn get_mut_unchecked(&self) -> &mut T {
+        //This is unsafe because it allows you to mutate the value without a mutable reference to the cell.
+        //You must guarantee that you are the only one mutating the value.
+        unsafe{&mut *self.0.get()}
+    }
+
 
 
     /**
@@ -49,7 +60,7 @@ impl <T> UnsafeSyncCell<T> {
     */
     pub fn into_inner(self) -> T {
         //I think this should be safe, because we are the only ones with access to the inner value?
-        self.0
+        self.0.into_inner()
     }
 }
 
@@ -84,13 +95,13 @@ impl<T: Default> UnsafeSyncCell<T> {
     Creates a new SyncCell with the default value.
     */
     pub fn default() -> Self {
-        UnsafeSyncCell(T::default())
+        UnsafeSyncCell(T::default().into())
     }
 }
 
 impl<T> From<T> for UnsafeSyncCell<T> {
     fn from(value: T) -> Self {
-        UnsafeSyncCell(value)
+        UnsafeSyncCell(value.into())
     }
 }
 
