@@ -164,8 +164,8 @@ impl<T: Hash> Hash for SyncCell<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use std::thread;
+    
+    
 
     #[test]
     fn test_basic_usage() {
