@@ -670,9 +670,8 @@ mod tests {
     #[test]
     //at the moment, threads don't work in node: https://github.com/wasm-bindgen/wasm-bindgen/issues/4534
     fn test_send_future_cross_thread_panic() {
-
-        use std::sync::{Arc, Mutex};
         use crate::sys::thread;
+        use std::sync::{Arc, Mutex};
 
         // Create future on main thread
         let non_send_future = NonSendFuture::new(42);
