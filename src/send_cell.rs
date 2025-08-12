@@ -616,7 +616,7 @@ mod tests {
 
     // Helper function to verify a type implements Send
     fn assert_send<T: Send>(_: &T) {}
-
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_send_cell_into_future_is_send() {
         // Create a non-Send future
@@ -632,6 +632,7 @@ mod tests {
         assert_send(&send_future);
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_send_future_functionality() {
         // Create a no-op waker for testing
@@ -665,6 +666,7 @@ mod tests {
         }
     }
 
+    //no unwind on wasm!
     #[test]
     //at the moment, threads don't work in node: https://github.com/wasm-bindgen/wasm-bindgen/issues/4534
     fn test_send_future_cross_thread_panic() {
