@@ -357,10 +357,27 @@ unsafe impl<T: Send> Send for SyncCell<T> {}
 unsafe impl<T: Send> Sync for SyncCell<T> {}
 
 
-// Trait implementations that use the closure-based access methods
-// These ensure proper synchronization by going through the mutex
+// ===========================================================================================
+// BOILERPLATE TRAIT IMPLEMENTATIONS
+// ===========================================================================================
+// All trait implementations below use the closure-based access methods to ensure proper
+// synchronization by going through the mutex. This prevents deadlocks and ensures thread safety.
+//
+// Design Notes:
+// - AsRef/Deref are intentionally NOT implemented because they would require returning references
+//   that outlive the mutex guard, which could lead to deadlocks or use-after-free issues
+// - All implementations use the safe `with()` method for immutable access
+// - Clone creates a new independent SyncCell to maintain the ownership model
+
+// Basic formatting and construction traits
 impl<T: Debug> Debug for SyncCell<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.with(|value| value.fmt(f))
+    }
+}
+
+impl<T: std::fmt::Display> std::fmt::Display for SyncCell<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.with(|value| value.fmt(f))
     }
 }
@@ -377,15 +394,14 @@ impl<T> From<T> for SyncCell<T> {
     }
 }
 
-
-
+// Clone creates a new independent SyncCell with a cloned value
 impl<T: Clone> Clone for SyncCell<T> {
     fn clone(&self) -> Self {
         self.with(|value| SyncCell::new(value.clone()))
     }
 }
 
-// Comparison traits
+// Comparison traits - all use safe closure-based access
 impl<T: PartialEq> PartialEq for SyncCell<T> {
     fn eq(&self, other: &Self) -> bool {
         self.with(|a| other.with(|b| a == b))
@@ -441,6 +457,17 @@ mod tests {
         let cell = SyncCell::new(42);
         let debug_str = format!("{:?}", cell);
         assert_eq!(debug_str, "42");
+    }
+
+    #[test]
+    fn test_display() {
+        let cell = SyncCell::new(42);
+        let display_str = format!("{}", cell);
+        assert_eq!(display_str, "42");
+        
+        let cell_str = SyncCell::new("hello world");
+        let display_str = format!("{}", cell_str);
+        assert_eq!(display_str, "hello world");
     }
 
     #[test]
