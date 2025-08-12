@@ -99,7 +99,7 @@ use std::rc::Rc;
 fn setup_callback() {
     let data = Rc::new("main thread data");
     let cell = unsafe { UnsafeSendCell::new_unchecked(data) };
-    
+
     // SAFETY: Platform guarantees this callback runs on the main thread
     some_platform_api(move || {
         let data = unsafe { cell.get() };
@@ -158,10 +158,10 @@ use std::task::{Context, Poll};
 /// use std::rc::Rc;
 ///
 /// let data = Rc::new("hello");
-/// 
+///
 /// // SAFETY: We guarantee this won't be accessed from multiple threads
 /// let cell = unsafe { UnsafeSendCell::new_unchecked(data) };
-/// 
+///
 /// // SAFETY: We're still on the original thread
 /// let value = unsafe { cell.get() };
 /// assert_eq!(**value, "hello");
@@ -198,7 +198,7 @@ pub struct UnsafeSendCell<T>(T);
 // concurrently from multiple threads.
 unsafe impl<T> Send for UnsafeSendCell<T> {}
 
-impl <T> UnsafeSendCell<T> {
+impl<T> UnsafeSendCell<T> {
     /// Creates a new cell without verifying thread safety.
     ///
     /// # Safety
@@ -216,7 +216,7 @@ impl <T> UnsafeSendCell<T> {
     /// use std::rc::Rc;
     ///
     /// let data = Rc::new(42);
-    /// 
+    ///
     /// // SAFETY: We guarantee this won't be shared between threads
     /// let cell = unsafe { UnsafeSendCell::new_unchecked(data) };
     /// ```
@@ -258,7 +258,10 @@ impl <T> UnsafeSendCell<T> {
     /// ```
     #[inline]
     pub fn new(value: T) -> Self {
-        assert!(!std::mem::needs_drop::<T>(), "Cannot use safe constructor for types that implement Drop; use new_unchecked instead. ");
+        assert!(
+            !std::mem::needs_drop::<T>(),
+            "Cannot use safe constructor for types that implement Drop; use new_unchecked instead. "
+        );
         UnsafeSendCell(value)
     }
     /// Gets a reference to the underlying value.
@@ -282,7 +285,7 @@ impl <T> UnsafeSendCell<T> {
     /// use send_cells::UnsafeSendCell;
     ///
     /// let cell = UnsafeSendCell::new(42);
-    /// 
+    ///
     /// // SAFETY: We're on the same thread and i32 is safe to access
     /// let value = unsafe { cell.get() };
     /// assert_eq!(*value, 42);
@@ -310,12 +313,12 @@ impl <T> UnsafeSendCell<T> {
     /// use send_cells::UnsafeSendCell;
     ///
     /// let mut cell = UnsafeSendCell::new(42);
-    /// 
+    ///
     /// // SAFETY: We have exclusive access and i32 is safe to mutate
     /// unsafe {
     ///     *cell.get_mut() = 100;
     /// }
-    /// 
+    ///
     /// let value = unsafe { cell.get() };
     /// assert_eq!(*value, 100);
     /// ```
@@ -343,7 +346,7 @@ impl <T> UnsafeSendCell<T> {
     /// use send_cells::UnsafeSendCell;
     ///
     /// let cell = UnsafeSendCell::new(42);
-    /// 
+    ///
     /// // SAFETY: i32 is safe to take ownership of on any thread
     /// let value = unsafe { cell.into_inner() };
     /// assert_eq!(value, 42);
@@ -382,7 +385,7 @@ impl<T: Future> UnsafeSendCell<T> {
     /// }
     ///
     /// let future = non_send_future();
-    /// 
+    ///
     /// // SAFETY: We guarantee this future won't be sent between threads
     /// let cell = unsafe { UnsafeSendCell::new_unchecked(future) };
     /// let send_future = unsafe { cell.into_future() };
@@ -437,7 +440,7 @@ impl<T: Future> UnsafeSendCell<T> {
 /// }
 ///
 /// let future = NonSendFuture { data: Rc::new(42) };
-/// 
+///
 /// // SAFETY: We guarantee this won't be sent between threads
 /// let cell = unsafe { UnsafeSendCell::new_unchecked(future) };
 /// let send_future = unsafe { cell.into_future() };
@@ -511,9 +514,9 @@ impl<T> Debug for UnsafeSendCell<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::pin::Pin;
     use std::rc::Rc;
     use std::task::{Context, Poll};
-    use std::pin::Pin;
 
     // A future that is NOT Send because it contains Rc<T>
     struct NonSendFuture {
@@ -550,19 +553,19 @@ mod tests {
     fn test_non_send_future_to_send_future() {
         // Create a non-Send future
         let non_send_future = NonSendFuture::new(42);
-        
+
         // Verify it's not Send (this would fail to compile if uncommented)
         // assert_send(&non_send_future);
-        
+
         // Wrap it in UnsafeSendCell
         let cell = unsafe { UnsafeSendCell::new_unchecked(non_send_future) };
-        
+
         // Convert to a Send future
         let send_future = unsafe { cell.into_future() };
-        
+
         // Verify the resulting future is Send
         assert_send(&send_future);
-        
+
         // This demonstrates that we can now use this future in Send contexts
         // For example, we could spawn it on a thread pool (though we won't actually do that here)
     }
@@ -570,14 +573,14 @@ mod tests {
     #[test]
     fn test_future_functionality_preserved() {
         use std::task::{RawWaker, RawWakerVTable, Waker};
-        
+
         // Create a non-Send future
         let non_send_future = NonSendFuture::new(42);
-        
+
         // Wrap and convert
         let cell = unsafe { UnsafeSendCell::new_unchecked(non_send_future) };
         let mut send_future = unsafe { cell.into_future() };
-        
+
         // Create a no-op waker for testing
         static VTABLE: RawWakerVTable = RawWakerVTable::new(
             |_| RawWaker::new(std::ptr::null(), &VTABLE),
@@ -588,7 +591,7 @@ mod tests {
         let raw_waker = RawWaker::new(std::ptr::null(), &VTABLE);
         let waker = unsafe { Waker::from_raw(raw_waker) };
         let mut context = Context::from_waker(&waker);
-        
+
         // Test that the future still works correctly
         let pinned = Pin::new(&mut send_future);
         match pinned.poll(&mut context) {
@@ -604,4 +607,3 @@ mod tests {
         }
     }
 }
-

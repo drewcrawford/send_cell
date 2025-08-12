@@ -101,7 +101,7 @@ use std::sync::Arc;
 fn setup_event_handler() {
     let data = RefCell::new("event data");
     let cell = Arc::new(UnsafeSyncCell::new(data));
-    
+
     // SAFETY: Platform guarantees all callbacks run on the main thread
     register_event_callback(move || {
         let data = unsafe { cell.get() };
@@ -215,7 +215,7 @@ pub struct UnsafeSyncCell<T>(UnsafeCell<T>);
 // or that external synchronization is provided.
 unsafe impl<T> Sync for UnsafeSyncCell<T> {}
 
-impl <T> UnsafeSyncCell<T> {
+impl<T> UnsafeSyncCell<T> {
     /// Creates a new `UnsafeSyncCell` wrapping the given value.
     ///
     /// The value will be wrapped in an [`std::cell::UnsafeCell`] and can be shared
@@ -254,14 +254,14 @@ impl <T> UnsafeSyncCell<T> {
     /// use send_cells::unsafe_sync_cell::UnsafeSyncCell;
     ///
     /// let cell = UnsafeSyncCell::new(42);
-    /// 
+    ///
     /// // SAFETY: Single-threaded access
     /// let value = unsafe { cell.get() };
     /// assert_eq!(*value, 42);
     /// ```
-    pub unsafe fn get(&self) -> &T { unsafe {
-        &*self.0.get()
-    }}
+    pub unsafe fn get(&self) -> &T {
+        unsafe { &*self.0.get() }
+    }
     /// Gets a mutable reference to the underlying value.
     ///
     /// This is safe because it requires a mutable reference to the cell itself,
@@ -291,7 +291,7 @@ impl <T> UnsafeSyncCell<T> {
         //I think this should be safe, because we are the only ones with access to the inner value?
         self.0.get_mut()
     }
-    
+
     /// Gets a mutable reference to the underlying value without requiring `&mut self`.
     ///
     /// # Safety
@@ -331,10 +331,8 @@ impl <T> UnsafeSyncCell<T> {
     pub unsafe fn get_mut_unchecked(&self) -> &mut T {
         //This is unsafe because it allows you to mutate the value without a mutable reference to the cell.
         //You must guarantee that you are the only one mutating the value.
-        unsafe{&mut *self.0.get()}
+        unsafe { &mut *self.0.get() }
     }
-
-
 
     /**
     Consumes the SyncCell and returns the inner value.
@@ -344,7 +342,6 @@ impl <T> UnsafeSyncCell<T> {
         self.0.into_inner()
     }
 }
-
 
 /*
 Design note about traits.
@@ -388,6 +385,3 @@ impl<T> AsMut<T> for UnsafeSyncCell<T> {
         self.get_mut()
     }
 }
-
-
-

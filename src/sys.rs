@@ -46,4 +46,4 @@ On other platforms, it uses the standard library's `std::thread`.
 pub use wasm_thread as thread;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use std::thread as thread;
+pub use std::thread;

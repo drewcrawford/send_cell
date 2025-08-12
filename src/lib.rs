@@ -33,7 +33,7 @@ let send_cell = SendCell::new(data);
 // Access is checked at runtime - panics if accessed from wrong thread
 assert_eq!(**send_cell.get(), 42);
 
-// Wrap a non-Sync type to make it Sync  
+// Wrap a non-Sync type to make it Sync
 let shared_data = std::cell::RefCell::new("shared");
 let sync_cell = Arc::new(SyncCell::new(shared_data));
 
@@ -105,7 +105,7 @@ Full support for all major platforms with standard library support.
 
 ## WebAssembly
 
-This crate has full `wasm32-unknown-unknown` support with runtime thread checks 
+This crate has full `wasm32-unknown-unknown` support with runtime thread checks
 for web workers. Thread IDs are properly tracked even in WASM environments.
 
 # Examples
@@ -120,7 +120,7 @@ async fn process_data() {
     // Rc is not Send, but we need to use it in an async context
     let data = Rc::new(vec![1, 2, 3]);
     let cell = SendCell::new(data);
-    
+
     // Can be moved into async blocks that might run on different threads
     // Note: This would panic if actually polled on a different thread!
     let task = async move {
@@ -128,7 +128,7 @@ async fn process_data() {
         let data = cell.get();
         data.iter().sum::<i32>()
     };
-    
+
     // In a real application with tokio:
     // let result = tokio::spawn(task).await.unwrap();
 }
@@ -174,10 +174,10 @@ use std::rc::Rc;
 // Platform API guarantees callbacks run on main thread
 fn setup_main_thread_callback() {
     let data = Rc::new("main thread only");
-    
+
     // SAFETY: Platform guarantees this callback runs on main thread
     let cell = unsafe { UnsafeSendCell::new_unchecked(data) };
-    
+
     platform_specific_api(move || {
         // SAFETY: We're guaranteed to be on the main thread
         let data = unsafe { cell.get() };
@@ -217,7 +217,7 @@ and can rigorously verify thread safety.
 ## Memory Overhead
 
 - **SendCell**: One `ThreadId` + wrapped value
-- **SyncCell**: One `Mutex<()>` + wrapped value  
+- **SyncCell**: One `Mutex<()>` + wrapped value
 - **UnsafeSendCell**: No overhead (transparent wrapper)
 
 # Related Crates
@@ -226,13 +226,12 @@ and can rigorously verify thread safety.
 - [once_cell](https://crates.io/crates/once_cell) - Lazy initialization primitives
 - [parking_lot](https://crates.io/crates/parking_lot) - Alternative synchronization primitives
 */
-pub mod unsafe_send_cell;
-pub mod unsafe_sync_cell;
 pub mod send_cell;
 pub mod sync_cell;
 pub mod sys;
+pub mod unsafe_send_cell;
+pub mod unsafe_sync_cell;
 
 pub use send_cell::{SendCell, SendFuture};
 pub use sync_cell::SyncCell;
 pub use unsafe_send_cell::{UnsafeSendCell, UnsafeSendFuture};
-

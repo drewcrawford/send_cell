@@ -90,10 +90,10 @@ cell.with_mut(|vec| {
 ```
 */
 
-use std::fmt::{Debug, Formatter};
-use std::sync::{Mutex, };
-use std::hash::{Hash, Hasher};
 use crate::unsafe_sync_cell::UnsafeSyncCell;
+use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 
 /// A runtime-checked cell that allows sharing non-Sync types between threads.
 ///
@@ -216,7 +216,7 @@ impl<T> SyncCell<T> {
     #[inline]
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         let _guard = self.mutex.lock().unwrap();
-        let value = unsafe{self.inner.get()};
+        let value = unsafe { self.inner.get() };
         f(value)
     }
 
@@ -280,7 +280,7 @@ impl<T> SyncCell<T> {
     pub fn into_inner(self) -> T {
         self.inner.into_inner()
     }
-    
+
     /// Unsafely accesses the underlying value without acquiring the mutex.
     ///
     /// # Safety
@@ -299,16 +299,18 @@ impl<T> SyncCell<T> {
     /// use send_cells::SyncCell;
     ///
     /// let cell = SyncCell::new(42);
-    /// 
+    ///
     /// // SAFETY: We're the only thread accessing this cell
     /// let value = unsafe { cell.with_unchecked() };
     /// assert_eq!(*value, 42);
     /// ```
-    pub unsafe fn with_unchecked(&self) -> &T { unsafe {
-        // SAFETY: Caller guarantees proper synchronization
-        self.inner.get()
-    }}
-    
+    pub unsafe fn with_unchecked(&self) -> &T {
+        unsafe {
+            // SAFETY: Caller guarantees proper synchronization
+            self.inner.get()
+        }
+    }
+
     /// Unsafely accesses the underlying value mutably without acquiring the mutex.
     ///
     /// # Safety
@@ -328,23 +330,23 @@ impl<T> SyncCell<T> {
     /// use send_cells::SyncCell;
     ///
     /// let cell = SyncCell::new(42);
-    /// 
+    ///
     /// // SAFETY: We're the only thread accessing this cell
     /// unsafe {
     ///     *cell.with_mut_unchecked() = 100;
     /// }
-    /// 
+    ///
     /// cell.with(|value| {
     ///     assert_eq!(*value, 100);
     /// });
     /// ```
     #[allow(clippy::mut_from_ref)]
-    pub unsafe fn with_mut_unchecked(&self) -> &mut T { unsafe {
-        // SAFETY: Caller guarantees proper synchronization
-        self.inner.get_mut_unchecked()
-    }}
-    
-    
+    pub unsafe fn with_mut_unchecked(&self) -> &mut T {
+        unsafe {
+            // SAFETY: Caller guarantees proper synchronization
+            self.inner.get_mut_unchecked()
+        }
+    }
 }
 
 // SAFETY: SyncCell<T> can be Send when T: Send because the mutex ensures
@@ -354,7 +356,6 @@ unsafe impl<T: Send> Send for SyncCell<T> {}
 // SAFETY: SyncCell<T> can be Sync when T: Send because the mutex provides
 // the necessary synchronization for shared access across threads.
 unsafe impl<T: Send> Sync for SyncCell<T> {}
-
 
 // ===========================================================================================
 // BOILERPLATE TRAIT IMPLEMENTATIONS
@@ -430,16 +431,14 @@ impl<T: Hash> Hash for SyncCell<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
 
     #[test]
     fn test_basic_usage() {
         let cell = SyncCell::new(42);
-        
+
         let result = cell.with(|value| *value * 2);
         assert_eq!(result, 84);
-        
+
         cell.with_mut(|value| *value = 100);
         let result = cell.with(|value| *value);
         assert_eq!(result, 100);
@@ -463,7 +462,7 @@ mod tests {
         let cell = SyncCell::new(42);
         let display_str = format!("{}", cell);
         assert_eq!(display_str, "42");
-        
+
         let cell_str = SyncCell::new("hello world");
         let display_str = format!("{}", cell_str);
         assert_eq!(display_str, "hello world");
@@ -487,9 +486,9 @@ mod tests {
     fn test_clone() {
         let cell = SyncCell::new(42);
         let cloned = cell.clone();
-        
+
         assert_eq!(cell.with(|v| *v), cloned.with(|v| *v));
-        
+
         cell.with_mut(|v| *v = 100);
         assert_eq!(cell.with(|v| *v), 100);
         assert_eq!(cloned.with(|v| *v), 42); // Clone is independent
@@ -500,7 +499,7 @@ mod tests {
         let cell1 = SyncCell::new(42);
         let cell2 = SyncCell::new(42);
         let cell3 = SyncCell::new(43);
-        
+
         assert_eq!(cell1, cell2);
         assert_ne!(cell1, cell3);
     }
@@ -510,7 +509,7 @@ mod tests {
         let cell1 = SyncCell::new(1);
         let cell2 = SyncCell::new(2);
         let cell3 = SyncCell::new(3);
-        
+
         assert!(cell1 < cell2);
         assert!(cell2 < cell3);
         assert!(cell1 < cell3);
@@ -519,16 +518,16 @@ mod tests {
     #[test]
     fn test_hash() {
         use std::collections::HashMap;
-        
+
         let cell1 = SyncCell::new(42);
         let cell2 = SyncCell::new(42);
         let cell3 = SyncCell::new(43);
-        
+
         let mut map = HashMap::new();
         map.insert(cell1, "first");
         map.insert(cell2, "second"); // Should overwrite due to same hash/eq
         map.insert(cell3, "third");
-        
+
         assert_eq!(map.len(), 2);
     }
 
@@ -536,30 +535,27 @@ mod tests {
     fn test_send_sync() {
         fn assert_send<T: Send>(_: &T) {}
         fn assert_sync<T: Sync>(_: &T) {}
-        
+
         let cell = SyncCell::new(42);
         assert_send(&cell);
         assert_sync(&cell);
     }
-    
 
     #[test]
     fn test_no_deadlock_on_nested_access() {
         let cell = SyncCell::new(vec![1, 2, 3]);
-        
+
         // This should not deadlock because the closure-based API prevents
         // holding guards across await points or other operations
-        let result = cell.with(|vec| {
-            vec.len()
-        });
-        
+        let result = cell.with(|vec| vec.len());
+
         assert_eq!(result, 3);
-        
+
         // We can immediately access again without deadlock
         cell.with_mut(|vec| {
             vec.push(4);
         });
-        
+
         let new_len = cell.with(|vec| vec.len());
         assert_eq!(new_len, 4);
     }
@@ -567,24 +563,24 @@ mod tests {
     #[test]
     fn test_panic_recovery() {
         let cell = SyncCell::new(42);
-        
+
         // This should work fine
         let result = cell.with(|v| *v);
         assert_eq!(result, 42);
-        
+
         // Even after a panic in user code, the cell should still work
         // (though the mutex might be poisoned)
         let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             cell.with(|_| panic!("test panic"));
         }));
-        
+
         assert!(panic_result.is_err());
-        
+
         // The next access should panic due to mutex poisoning
         let poison_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             cell.with(|v| *v);
         }));
-        
+
         assert!(poison_result.is_err());
     }
 }

@@ -66,13 +66,13 @@ requires_send_future(send_future);
 ```
 */
 
+use crate::unsafe_send_cell::UnsafeSendCell;
 use std::fmt::{Debug, Formatter};
-use std::ops::{Deref, DerefMut};
-use std::thread::ThreadId;
 use std::future::Future;
+use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::unsafe_send_cell::UnsafeSendCell;
+use std::thread::ThreadId;
 
 /// A runtime-checked cell that allows sending non-Send types between threads.
 ///
@@ -124,7 +124,7 @@ pub struct SendCell<T> {
     thread_id: ThreadId,
 }
 
-impl <T> SendCell<T> {
+impl<T> SendCell<T> {
     /// Creates a new `SendCell` wrapping the given value.
     ///
     /// The cell will "remember" the current thread ID. All subsequent access
@@ -147,7 +147,7 @@ impl <T> SendCell<T> {
     pub fn new(t: T) -> SendCell<T> {
         SendCell {
             //safe because drop is verified
-            inner: Some(unsafe{UnsafeSendCell::new_unchecked(t)}),
+            inner: Some(unsafe { UnsafeSendCell::new_unchecked(t) }),
             thread_id: crate::sys::thread::current().id(),
         }
     }
@@ -170,15 +170,15 @@ impl <T> SendCell<T> {
     /// use send_cells::SendCell;
     ///
     /// let cell = SendCell::new(42);
-    /// 
+    ///
     /// // SAFETY: We're on the same thread, so this is safe
     /// let value = unsafe { cell.get_unchecked() };
     /// assert_eq!(*value, 42);
     /// ```
     #[inline]
-    pub unsafe fn get_unchecked(&self) -> &T { unsafe {
-        self.inner.as_ref().expect("gone").get()
-    }}
+    pub unsafe fn get_unchecked(&self) -> &T {
+        unsafe { self.inner.as_ref().expect("gone").get() }
+    }
     /// Accesses the underlying value with runtime thread checking.
     ///
     /// This is the safe way to access the wrapped value. The method will verify
@@ -205,7 +205,11 @@ impl <T> SendCell<T> {
     /// ```
     #[inline]
     pub fn get(&self) -> &T {
-        assert_eq!(self.thread_id, crate::sys::thread::current().id(), "Access SendCell from incorrect thread");
+        assert_eq!(
+            self.thread_id,
+            crate::sys::thread::current().id(),
+            "Access SendCell from incorrect thread"
+        );
         //safe with assertion
         unsafe { self.get_unchecked() }
     }
@@ -228,7 +232,7 @@ impl <T> SendCell<T> {
     /// use send_cells::SendCell;
     ///
     /// let mut cell = SendCell::new(42);
-    /// 
+    ///
     /// // SAFETY: We're on the same thread, so this is safe
     /// unsafe {
     ///     *cell.get_unchecked_mut() = 100;
@@ -236,9 +240,9 @@ impl <T> SendCell<T> {
     /// assert_eq!(*cell.get(), 100);
     /// ```
     #[inline]
-    pub unsafe fn get_unchecked_mut(&mut self) -> &mut T { unsafe {
-        &mut *self.inner.as_mut().expect("gone").get_mut()
-    }}
+    pub unsafe fn get_unchecked_mut(&mut self) -> &mut T {
+        unsafe { &mut *self.inner.as_mut().expect("gone").get_mut() }
+    }
 
     /// Accesses the underlying value mutably with runtime thread checking.
     ///
@@ -265,8 +269,12 @@ impl <T> SendCell<T> {
     /// ```
     #[inline]
     pub fn get_mut(&mut self) -> &mut T {
-        assert_eq!(self.thread_id, crate::sys::thread::current().id(), "Access SendCell from incorrect thread");
-        unsafe { self.get_unchecked_mut()}
+        assert_eq!(
+            self.thread_id,
+            crate::sys::thread::current().id(),
+            "Access SendCell from incorrect thread"
+        );
+        unsafe { self.get_unchecked_mut() }
     }
 
     /// Unsafely consumes the cell and returns the wrapped value without thread checking.
@@ -287,15 +295,15 @@ impl <T> SendCell<T> {
     /// use send_cells::SendCell;
     ///
     /// let cell = SendCell::new(42);
-    /// 
+    ///
     /// // SAFETY: We're on the same thread, so this is safe
     /// let value = unsafe { cell.into_unchecked_inner() };
     /// assert_eq!(value, 42);
     /// ```
     #[inline]
-    pub unsafe fn into_unchecked_inner(mut self)  -> T { unsafe {
-        self.inner.take().expect("gone").into_inner()
-    }}
+    pub unsafe fn into_unchecked_inner(mut self) -> T {
+        unsafe { self.inner.take().expect("gone").into_inner() }
+    }
     /// Consumes the cell and returns the wrapped value with runtime thread checking.
     ///
     /// This is the safe way to extract the wrapped value from the cell. The method
@@ -345,22 +353,24 @@ impl <T> SendCell<T> {
     /// use std::rc::Rc;
     ///
     /// let original = SendCell::new(Rc::new(42));
-    /// 
+    ///
     /// // Create a new cell with a String on the same thread
-    /// let derived = unsafe { 
-    ///     original.preserving_cell_thread("Hello".to_string()) 
+    /// let derived = unsafe {
+    ///     original.preserving_cell_thread("Hello".to_string())
     /// };
-    /// 
+    ///
     /// assert_eq!(original.get().as_ref(), &42);
     /// assert_eq!(derived.get(), "Hello");
     /// ```
     #[inline]
-    pub unsafe fn preserving_cell_thread<U>(&self, new: U) -> SendCell<U> { unsafe {
-        SendCell {
-            inner: Some(UnsafeSendCell::new_unchecked(new)),
-            thread_id: self.thread_id,
+    pub unsafe fn preserving_cell_thread<U>(&self, new: U) -> SendCell<U> {
+        unsafe {
+            SendCell {
+                inner: Some(UnsafeSendCell::new_unchecked(new)),
+                thread_id: self.thread_id,
+            }
         }
-    }}
+    }
 
     /// Copies the wrapped value, creating a new cell on the same thread.
     ///
@@ -377,15 +387,17 @@ impl <T> SendCell<T> {
     /// let copied = original.copying();
     ///
     /// assert_eq!(*original.get(), *copied.get());
-    /// 
+    ///
     /// // They are independent cells
     /// std::mem::drop(original);
     /// assert_eq!(*copied.get(), 42);
     /// ```
-    pub fn copying(&self) -> Self where T: Copy {
+    pub fn copying(&self) -> Self
+    where
+        T: Copy,
+    {
         unsafe { self.preserving_cell_thread(*self.get_unchecked()) }
     }
-
 }
 
 impl<T: Future> SendCell<T> {
@@ -434,7 +446,11 @@ impl<T: Future> SendCell<T> {
 impl<T> Drop for SendCell<T> {
     fn drop(&mut self) {
         if std::mem::needs_drop::<T>() {
-            assert_eq!(self.thread_id, crate::sys::thread::current().id(), "Drop SendCell from incorrect thread");
+            assert_eq!(
+                self.thread_id,
+                crate::sys::thread::current().id(),
+                "Drop SendCell from incorrect thread"
+            );
         }
     }
 }
@@ -446,7 +462,6 @@ impl<T: Debug> Debug for SendCell<T> {
         self.get().fmt(f)
     }
 }
-
 
 impl<T> AsRef<T> for SendCell<T> {
     fn as_ref(&self) -> &T {
@@ -549,14 +564,14 @@ impl<T: Future> Future for SendFuture<T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // Runtime thread check - panic if called from wrong thread
         assert_eq!(
-            self.thread_id, 
-            crate::sys::thread::current().id(), 
+            self.thread_id,
+            crate::sys::thread::current().id(),
             "SendFuture polled from incorrect thread"
         );
-        
+
         // SAFETY: After the thread check, we can safely access the inner future
         // using the same technique as UnsafeSendFuture
-        let inner = unsafe { 
+        let inner = unsafe {
             let self_mut = self.get_unchecked_mut();
             Pin::new_unchecked(self_mut.inner.get_mut())
         };
@@ -567,9 +582,9 @@ impl<T: Future> Future for SendFuture<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::pin::Pin;
     use std::rc::Rc;
     use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
-    use std::pin::Pin;
 
     // A future that is NOT Send because it contains Rc<T>
     struct NonSendFuture {
@@ -606,13 +621,13 @@ mod tests {
     fn test_send_cell_into_future_is_send() {
         // Create a non-Send future
         let non_send_future = NonSendFuture::new(42);
-        
+
         // Wrap it in SendCell
         let cell = SendCell::new(non_send_future);
-        
+
         // Convert to a Send future
         let send_future = cell.into_future();
-        
+
         // Verify the resulting future is Send
         assert_send(&send_future);
     }
@@ -629,12 +644,12 @@ mod tests {
         let raw_waker = RawWaker::new(std::ptr::null(), &VTABLE);
         let waker = unsafe { Waker::from_raw(raw_waker) };
         let mut context = Context::from_waker(&waker);
-        
+
         // Create a non-Send future wrapped in SendCell
         let non_send_future = NonSendFuture::new(42);
         let cell = SendCell::new(non_send_future);
         let mut send_future = cell.into_future();
-        
+
         // Test that the future still works correctly
         let pinned = Pin::new(&mut send_future);
         match pinned.poll(&mut context) {
@@ -654,16 +669,16 @@ mod tests {
     fn test_send_future_cross_thread_panic() {
         use std::sync::{Arc, Mutex};
         use std::thread;
-        
+
         // Create future on main thread
         let non_send_future = NonSendFuture::new(42);
         let cell = SendCell::new(non_send_future);
         let send_future = cell.into_future();
-        
+
         // Share the future with another thread
         let future_mutex = Arc::new(Mutex::new(send_future));
         let future_clone = Arc::clone(&future_mutex);
-        
+
         // Try to poll from a different thread - this should panic
         let handle = thread::spawn(move || {
             // Create a no-op waker inside the thread
@@ -676,17 +691,17 @@ mod tests {
             let raw_waker = RawWaker::new(std::ptr::null(), &VTABLE);
             let waker = unsafe { Waker::from_raw(raw_waker) };
             let mut context = Context::from_waker(&waker);
-            
+
             let mut future_guard = future_clone.lock().unwrap();
             let pinned = Pin::new(&mut *future_guard);
             let _ = pinned.poll(&mut context);
         });
-        
+
         // Verify that the thread panicked
         let result = handle.join();
-        assert!(result.is_err(), "Expected thread to panic when polling SendFuture from incorrect thread");
+        assert!(
+            result.is_err(),
+            "Expected thread to panic when polling SendFuture from incorrect thread"
+        );
     }
 }
-
-
-
