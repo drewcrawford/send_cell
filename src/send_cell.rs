@@ -72,7 +72,7 @@ use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::thread::ThreadId;
+use crate::sys::thread::ThreadId;
 
 /// A runtime-checked cell that allows sending non-Send types between threads.
 ///
