@@ -85,4 +85,4 @@ jobs:
         run: cargo ${{ matrix.channel }} doc ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
 
       - name: tests
-        run: cargo ${{ matrix.channel }} test ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
+        run: cargo ${{ matrix.channel }} test ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }} -- --nocapture
