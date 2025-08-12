@@ -306,10 +306,10 @@ impl<T> SyncCell<T> {
     /// let value = unsafe { cell.with_unchecked() };
     /// assert_eq!(*value, 42);
     /// ```
-    pub unsafe fn with_unchecked(&self) -> &T {
+    pub unsafe fn with_unchecked(&self) -> &T { unsafe {
         // SAFETY: Caller guarantees proper synchronization
         self.inner.get()
-    }
+    }}
     
     /// Unsafely accesses the underlying value mutably without acquiring the mutex.
     ///
@@ -340,10 +340,10 @@ impl<T> SyncCell<T> {
     ///     assert_eq!(*value, 100);
     /// });
     /// ```
-    pub unsafe fn with_mut_unchecked(&self) -> &mut T {
+    pub unsafe fn with_mut_unchecked(&self) -> &mut T { unsafe {
         // SAFETY: Caller guarantees proper synchronization
         self.inner.get_mut_unchecked()
-    }
+    }}
     
     
 }

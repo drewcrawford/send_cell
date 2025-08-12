@@ -176,9 +176,9 @@ impl <T> SendCell<T> {
     /// assert_eq!(*value, 42);
     /// ```
     #[inline]
-    pub unsafe fn get_unchecked(&self) -> &T {
+    pub unsafe fn get_unchecked(&self) -> &T { unsafe {
         &*self.inner.as_ref().expect("gone").get()
-    }
+    }}
     /// Accesses the underlying value with runtime thread checking.
     ///
     /// This is the safe way to access the wrapped value. The method will verify
@@ -236,9 +236,9 @@ impl <T> SendCell<T> {
     /// assert_eq!(*cell.get(), 100);
     /// ```
     #[inline]
-    pub unsafe fn get_unchecked_mut(&mut self) -> &mut T {
+    pub unsafe fn get_unchecked_mut(&mut self) -> &mut T { unsafe {
         &mut *self.inner.as_mut().expect("gone").get_mut()
-    }
+    }}
 
     /// Accesses the underlying value mutably with runtime thread checking.
     ///
@@ -293,9 +293,9 @@ impl <T> SendCell<T> {
     /// assert_eq!(value, 42);
     /// ```
     #[inline]
-    pub unsafe fn into_unchecked_inner(mut self)  -> T {
+    pub unsafe fn into_unchecked_inner(mut self)  -> T { unsafe {
         self.inner.take().expect("gone").into_inner()
-    }
+    }}
     /// Consumes the cell and returns the wrapped value with runtime thread checking.
     ///
     /// This is the safe way to extract the wrapped value from the cell. The method
@@ -355,12 +355,12 @@ impl <T> SendCell<T> {
     /// assert_eq!(derived.get(), "Hello");
     /// ```
     #[inline]
-    pub unsafe fn preserving_cell_thread<U>(&self, new: U) -> SendCell<U> {
+    pub unsafe fn preserving_cell_thread<U>(&self, new: U) -> SendCell<U> { unsafe {
         SendCell {
             inner: Some(UnsafeSendCell::new_unchecked(new)),
             thread_id: self.thread_id,
         }
-    }
+    }}
 
     /// Copies the wrapped value, creating a new cell on the same thread.
     ///

@@ -259,9 +259,9 @@ impl <T> UnsafeSyncCell<T> {
     /// let value = unsafe { cell.get() };
     /// assert_eq!(*value, 42);
     /// ```
-    pub unsafe fn get(&self) -> &T {
+    pub unsafe fn get(&self) -> &T { unsafe {
         &*self.0.get()
-    }
+    }}
     /// Gets a mutable reference to the underlying value.
     ///
     /// This is safe because it requires a mutable reference to the cell itself,
