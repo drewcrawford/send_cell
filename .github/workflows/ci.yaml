@@ -28,12 +28,12 @@ jobs:
       - name: Cache target
         uses: actions/cache@v4
         with:
-          key: target-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.features }}-${{ hashFiles('**/Cargo.lock') }}
-          path: "target"
+          key: target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.features }}-${{ hashFiles('**/Cargo.lock') }}
+          path: target
           restore-keys: |
-            target-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.features }}-
-            target-${{ matrix.os }}-${{ matrix.target }}-
-            target-${{ matrix.os }}-
+            target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.features }}-
+            target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.target }}-
+            target-${{ github.event.repository.name }}-${{ matrix.os }}-
 
       # Compute reusable args once
       - name: Compute cargo args
