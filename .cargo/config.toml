@@ -4,4 +4,3 @@ build-std = ["std", "panic_abort"]
 
 [target.'cfg(target_arch="wasm32")']
 runner = "wasm-bindgen-test-runner"
-rustflags = ["-C", "target-feature=+atomics,+bulk-memory,+mutable-globals"]

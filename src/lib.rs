@@ -235,9 +235,3 @@ pub mod unsafe_sync_cell;
 pub use send_cell::{SendCell, SendFuture};
 pub use sync_cell::SyncCell;
 pub use unsafe_send_cell::{UnsafeSendCell, UnsafeSendFuture};
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen::prelude::wasm_bindgen(start)]
-pub fn _init_tests() {
-    console_error_panic_hook::set_once();
-}
