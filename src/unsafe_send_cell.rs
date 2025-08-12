@@ -191,7 +191,6 @@ use std::task::{Context, Poll};
 /// - Prototyping concurrent code
 ///
 /// For safer alternatives with runtime checks, see [`crate::SendCell`].
-
 pub struct UnsafeSendCell<T>(T);
 
 // SAFETY: UnsafeSendCell implements Send for any T, regardless of whether T implements Send.

@@ -327,6 +327,7 @@ impl <T> UnsafeSyncCell<T> {
     ///     assert_eq!(*cell.get(), 100);
     /// }
     /// ```
+    #[allow(clippy::mut_from_ref)]
     pub unsafe fn get_mut_unchecked(&self) -> &mut T {
         //This is unsafe because it allows you to mutate the value without a mutable reference to the cell.
         //You must guarantee that you are the only one mutating the value.
@@ -370,11 +371,8 @@ impl<T> Debug for UnsafeSyncCell<T> {
     }
 }
 
-impl<T: Default> UnsafeSyncCell<T> {
-    /**
-    Creates a new SyncCell with the default value.
-    */
-    pub fn default() -> Self {
+impl<T: Default> Default for UnsafeSyncCell<T> {
+    fn default() -> Self {
         UnsafeSyncCell(T::default().into())
     }
 }

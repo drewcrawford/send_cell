@@ -177,7 +177,7 @@ impl <T> SendCell<T> {
     /// ```
     #[inline]
     pub unsafe fn get_unchecked(&self) -> &T { unsafe {
-        &*self.inner.as_ref().expect("gone").get()
+        self.inner.as_ref().expect("gone").get()
     }}
     /// Accesses the underlying value with runtime thread checking.
     ///

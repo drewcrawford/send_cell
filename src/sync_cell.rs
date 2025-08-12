@@ -217,8 +217,7 @@ impl<T> SyncCell<T> {
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         let _guard = self.mutex.lock().unwrap();
         let value = unsafe{self.inner.get()};
-        let result = f(value);
-        result
+        f(value)
     }
 
     /// Accesses the underlying value mutably through a synchronous closure.
@@ -257,8 +256,7 @@ impl<T> SyncCell<T> {
         let _guard = self.mutex.lock().unwrap();
         //safe since we hold the lock
         let value = unsafe { self.inner.get_mut_unchecked() };
-        let result = f(value);
-        result
+        f(value)
     }
 
     /// Consumes the cell and returns the wrapped value.
@@ -340,6 +338,7 @@ impl<T> SyncCell<T> {
     ///     assert_eq!(*value, 100);
     /// });
     /// ```
+    #[allow(clippy::mut_from_ref)]
     pub unsafe fn with_mut_unchecked(&self) -> &mut T { unsafe {
         // SAFETY: Caller guarantees proper synchronization
         self.inner.get_mut_unchecked()
