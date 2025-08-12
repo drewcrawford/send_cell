@@ -66,13 +66,13 @@ requires_send_future(send_future);
 ```
 */
 
+use crate::sys::thread::ThreadId;
 use crate::unsafe_send_cell::UnsafeSendCell;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::sys::thread::ThreadId;
 
 /// A runtime-checked cell that allows sending non-Send types between threads.
 ///
