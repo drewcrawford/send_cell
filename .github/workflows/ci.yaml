@@ -28,14 +28,17 @@ jobs:
       - name: Cache target
         uses: actions/cache@v4
         with:
-          key: target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.features }}-${{ hashFiles('**/Cargo.lock') }}
+          key: target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.channel || 'stable'}}-${{ matrix.target || 'host' }}-${{ matrix.features || 'default' }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
           path: |
             target
             ~/.cargo/bin # cache for wasm-bindgen-cli
           restore-keys: |
-            target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.features }}-
-            target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.target }}-
-            target-${{ github.event.repository.name }}-${{ matrix.os }}-
+            target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.channel || 'stable'}}-${{ matrix.target || 'host' }}-${{ matrix.features || 'default' }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+            target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.channel || 'stable'}}-${{ matrix.target || 'host' }}-${{ matrix.features || 'default' }}
+            target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.channel || 'stable'}}-${{ matrix.target || 'host' }}
+            target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.channel || 'stable'}}
+            target-${{ github.event.repository.name }}-${{ matrix.os }}
+            target-${{ github.event.repository.name }}
 
       # Compute reusable args once
       - name: Compute cargo args
