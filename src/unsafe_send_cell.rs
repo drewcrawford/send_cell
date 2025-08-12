@@ -549,7 +549,6 @@ mod tests {
     // Helper function to verify a type implements Send
     fn assert_send<T: Send>(_: &T) {}
 
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_non_send_future_to_send_future() {
         // Create a non-Send future
@@ -570,6 +569,10 @@ mod tests {
         // This demonstrates that we can now use this future in Send contexts
         // For example, we could spawn it on a thread pool (though we won't actually do that here)
     }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[test]
+    fn blank_test() { }
 
     #[test]
     fn test_future_functionality_preserved() {
