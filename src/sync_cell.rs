@@ -432,6 +432,7 @@ impl<T: Hash> Hash for SyncCell<T> {
 mod tests {
     use super::*;
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_basic_usage() {
         let cell = SyncCell::new(42);
@@ -444,12 +445,14 @@ mod tests {
         assert_eq!(result, 100);
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_into_inner() {
         let cell = SyncCell::new(42);
         assert_eq!(cell.into_inner(), 42);
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_debug() {
         let cell = SyncCell::new(42);
@@ -457,6 +460,7 @@ mod tests {
         assert_eq!(debug_str, "42");
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_display() {
         let cell = SyncCell::new(42);
@@ -468,6 +472,7 @@ mod tests {
         assert_eq!(display_str, "hello world");
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_default() {
         let cell: SyncCell<i32> = SyncCell::default();
@@ -475,6 +480,7 @@ mod tests {
         assert_eq!(value, 0);
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_from() {
         let cell: SyncCell<i32> = SyncCell::from(42);
@@ -482,6 +488,7 @@ mod tests {
         assert_eq!(value, 42);
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_clone() {
         let cell = SyncCell::new(42);
@@ -494,6 +501,7 @@ mod tests {
         assert_eq!(cloned.with(|v| *v), 42); // Clone is independent
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_partial_eq() {
         let cell1 = SyncCell::new(42);
@@ -504,6 +512,7 @@ mod tests {
         assert_ne!(cell1, cell3);
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_ord() {
         let cell1 = SyncCell::new(1);
@@ -515,6 +524,7 @@ mod tests {
         assert!(cell1 < cell3);
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_hash() {
         use std::collections::HashMap;
@@ -531,6 +541,7 @@ mod tests {
         assert_eq!(map.len(), 2);
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_send_sync() {
         fn assert_send<T: Send>(_: &T) {}
@@ -541,6 +552,7 @@ mod tests {
         assert_sync(&cell);
     }
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
     fn test_no_deadlock_on_nested_access() {
         let cell = SyncCell::new(vec![1, 2, 3]);
@@ -561,6 +573,7 @@ mod tests {
     }
 
     #[test]
+    //note: unwind tests are not supported in wasm
     fn test_panic_recovery() {
         let cell = SyncCell::new(42);
 
