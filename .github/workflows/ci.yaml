@@ -55,11 +55,11 @@ jobs:
           echo "features=${FEATURES_ARG}" >> "$GITHUB_OUTPUT"
           echo "target=${TARGET_ARG}"   >> "$GITHUB_OUTPUT"
 
-      - name: Github update Rust
-        if: runner.os == 'Linux' && !(env.GITEA_ACTIONS == 'true')
-        run: |
-          # at the moment, GitHub is too far behind mainline rust (v1.89.0-v1.91.0-nightly)
-          rustup update
+#      - name: Github update Rust
+#        if: runner.os == 'Linux' && !(env.GITEA_ACTIONS == 'true')
+#        run: |
+#          # at the moment, GitHub is too far behind mainline rust (v1.89.0-v1.91.0-nightly)
+#          rustup update
       - name: Install wasm target
         if: matrix.target == 'wasm32-unknown-unknown' && !(env.GITEA_ACTIONS == 'true')
         run: rustup ${{ matrix.channel}} target add wasm32-unknown-unknown
