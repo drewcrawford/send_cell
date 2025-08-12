@@ -1,8 +1,69 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 /*!
-A runtime-checked sending cell.
+A runtime-checked cell for safely sending non-Send types across thread boundaries.
 
-This verifies that all use of the resulting value occurs on the same thread.
+This module provides [`SendCell<T>`] and [`SendFuture<T>`], which allow you to wrap
+non-Send types and move them between threads while ensuring thread safety through runtime checks.
+Unlike [`crate::unsafe_send_cell`], this module provides safe APIs that panic if accessed
+from the wrong thread.
+
+# Use Cases
+
+- Wrapping non-Send types (like `Rc<T>`, `RefCell<T>`) to use in async contexts that require Send
+- Moving platform-specific resources between threads when you know it's safe
+- Prototyping concurrent code without fighting the borrow checker
+- Working with callback-based APIs where thread guarantees are implicit
+
+# Thread Safety Model
+
+[`SendCell<T>`] remembers the thread it was created on and performs runtime checks on all access:
+- All methods except the `*_unchecked` variants will panic if called from a different thread
+- The cell can be moved between threads, but can only be accessed from its origin thread
+- Drop is also checked, ensuring the wrapped value is only dropped on the correct thread
+
+# Example
+
+```rust
+use send_cells::SendCell;
+use std::rc::Rc;
+
+// Rc<T> is not Send, but we can wrap it in SendCell
+let data = Rc::new(42);
+let cell = SendCell::new(data);
+
+// The cell itself implements Send
+fn requires_send<T: Send>(_: T) {}
+requires_send(cell);
+
+// Access the data (only works on the original thread)
+// let value = *cell.get(); // Would work here
+// println!("Value: {}", value);
+```
+
+# Futures
+
+[`SendFuture<T>`] provides the same thread safety guarantees for futures:
+
+```rust
+use send_cells::SendCell;
+use std::rc::Rc;
+use std::future::Future;
+
+// A future that contains non-Send data
+async fn non_send_future() -> i32 {
+    let _local = Rc::new(42); // Non-Send
+    42
+}
+
+// Wrap it to make it Send with runtime checks
+let future = non_send_future();
+let cell = SendCell::new(future);
+let send_future = cell.into_future();
+
+// Now it can be used in Send contexts
+fn requires_send_future<F: Future + Send>(_: F) {}
+requires_send_future(send_future);
+```
 */
 
 use std::fmt::{Debug, Formatter};
@@ -13,18 +74,75 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use crate::unsafe_send_cell::UnsafeSendCell;
 
+/// A runtime-checked cell that allows sending non-Send types between threads.
+///
+/// `SendCell<T>` wraps a value of type `T` (which may not implement `Send`) and provides
+/// a `Send` implementation with runtime thread checking. The cell remembers the thread
+/// it was created on and panics if accessed from any other thread.
+///
+/// Unlike [`crate::UnsafeSendCell`], this provides memory safety by performing runtime
+/// checks on all operations. This makes it safe to use but comes with the cost of
+/// runtime panics if used incorrectly.
+///
+/// # Examples
+///
+/// Basic usage with a non-Send type:
+///
+/// ```rust
+/// use send_cells::SendCell;
+/// use std::rc::Rc;
+///
+/// // Rc<i32> is not Send, but SendCell<Rc<i32>> is
+/// let data = Rc::new(42);
+/// let cell = SendCell::new(data);
+///
+/// // Access the wrapped value
+/// assert_eq!(**cell.get(), 42);
+///
+/// // The cell can be moved between threads (but not accessed)
+/// fn assert_send<T: Send>(_: T) {}
+/// assert_send(cell);
+/// ```
+///
+/// Cloning/copying wrapped values:
+///
+/// ```rust
+/// use send_cells::SendCell;
+///
+/// let cell = SendCell::new(42i32);
+/// let copied_cell = cell.copying(); // Safe for Copy types
+///
+/// assert_eq!(*cell.get(), *copied_cell.get());
+/// ```
+///
+/// # Panics
+///
+/// All methods (except `*_unchecked` variants) will panic if called from a different
+/// thread than the one where the `SendCell` was created.
 pub struct SendCell<T> {
     inner: Option<UnsafeSendCell<T>>,
     thread_id: ThreadId,
 }
 
 impl <T> SendCell<T> {
-    /**
-    Creates a new cell.
-
-    This constructor wil "remember" the current thread.  Subsequent access
-    will be checked against the constructed value.
-*/
+    /// Creates a new `SendCell` wrapping the given value.
+    ///
+    /// The cell will "remember" the current thread ID. All subsequent access
+    /// to the wrapped value will be checked against this thread ID, and will
+    /// panic if accessed from a different thread.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SendCell;
+    /// use std::rc::Rc;
+    ///
+    /// let data = Rc::new("Hello, world!");
+    /// let cell = SendCell::new(data);
+    ///
+    /// // Can access on the same thread
+    /// println!("{}", cell.get());
+    /// ```
     #[inline]
     pub fn new(t: T) -> SendCell<T> {
         SendCell {
@@ -34,20 +152,57 @@ impl <T> SendCell<T> {
         }
     }
 
-    /**
-    Unsafely accesses the underlying value, without checking the accessing thread.
-*/
+    /// Unsafely accesses the underlying value without thread checking.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - The value is safe to access from the current thread
+    /// - No concurrent access is occurring from other threads
+    /// - The value's invariants are maintained
+    ///
+    /// This method bypasses the runtime thread check and may lead to undefined
+    /// behavior if the wrapped type is not actually thread-safe.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SendCell;
+    ///
+    /// let cell = SendCell::new(42);
+    /// 
+    /// // SAFETY: We're on the same thread, so this is safe
+    /// let value = unsafe { cell.get_unchecked() };
+    /// assert_eq!(*value, 42);
+    /// ```
     #[inline]
     pub unsafe fn get_unchecked(&self) -> &T {
         &*self.inner.as_ref().expect("gone").get()
     }
-    /**
-    Access the underlying value.
-
-    # Panics
-
-    This function will panic if accessed from a different thread than the cell was created on.
-*/
+    /// Accesses the underlying value with runtime thread checking.
+    ///
+    /// This is the safe way to access the wrapped value. The method will verify
+    /// that the current thread matches the thread where the cell was created.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from a different thread than the one where this `SendCell`
+    /// was created.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SendCell;
+    /// use std::collections::HashMap;
+    ///
+    /// let mut map = HashMap::new();
+    /// map.insert("key", "value");
+    /// let cell = SendCell::new(map);
+    ///
+    /// // Safe access on the same thread
+    /// let value = cell.get().get("key");
+    /// assert_eq!(value, Some(&"value"));
+    /// ```
     #[inline]
     pub fn get(&self) -> &T {
         assert_eq!(self.thread_id, crate::sys::thread::current().id(), "Access SendCell from incorrect thread");
@@ -55,53 +210,150 @@ impl <T> SendCell<T> {
         unsafe { self.get_unchecked() }
     }
 
-    /**
-    Unsafely accesses the underlying value, without checking the accessing thread.
-*/
+    /// Unsafely accesses the underlying value mutably without thread checking.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - The value is safe to access mutably from the current thread
+    /// - No concurrent access is occurring from other threads
+    /// - The value's invariants are maintained after mutation
+    ///
+    /// This method bypasses the runtime thread check and may lead to undefined
+    /// behavior if the wrapped type is not actually thread-safe.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SendCell;
+    ///
+    /// let mut cell = SendCell::new(42);
+    /// 
+    /// // SAFETY: We're on the same thread, so this is safe
+    /// unsafe {
+    ///     *cell.get_unchecked_mut() = 100;
+    /// }
+    /// assert_eq!(*cell.get(), 100);
+    /// ```
     #[inline]
     pub unsafe fn get_unchecked_mut(&mut self) -> &mut T {
         &mut *self.inner.as_mut().expect("gone").get_mut()
     }
 
-    /**
-    Accesses the underlying value.
-
-    This function will panic if accessed from a different thread than the cell was created on.
-*/
+    /// Accesses the underlying value mutably with runtime thread checking.
+    ///
+    /// This is the safe way to mutably access the wrapped value. The method will
+    /// verify that the current thread matches the thread where the cell was created.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from a different thread than the one where this `SendCell`
+    /// was created.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SendCell;
+    /// use std::collections::HashMap;
+    ///
+    /// let map = HashMap::new();
+    /// let mut cell = SendCell::new(map);
+    ///
+    /// // Safe mutable access on the same thread
+    /// cell.get_mut().insert("key", "value");
+    /// assert_eq!(cell.get().get("key"), Some(&"value"));
+    /// ```
     #[inline]
     pub fn get_mut(&mut self) -> &mut T {
         assert_eq!(self.thread_id, crate::sys::thread::current().id(), "Access SendCell from incorrect thread");
         unsafe { self.get_unchecked_mut()}
     }
 
-    /**
-    Unsafely accesses the underlying value, without checking the accessing thread.
-    */
+    /// Unsafely consumes the cell and returns the wrapped value without thread checking.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - It is safe to take ownership of the value on the current thread
+    /// - The value can be safely dropped on the current thread
+    /// - No other references to the value exist
+    ///
+    /// This method bypasses the runtime thread check and may lead to undefined
+    /// behavior if the wrapped type is not actually safe to move between threads.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SendCell;
+    ///
+    /// let cell = SendCell::new(42);
+    /// 
+    /// // SAFETY: We're on the same thread, so this is safe
+    /// let value = unsafe { cell.into_unchecked_inner() };
+    /// assert_eq!(value, 42);
+    /// ```
     #[inline]
     pub unsafe fn into_unchecked_inner(mut self)  -> T {
         self.inner.take().expect("gone").into_inner()
     }
-    /**
-    Accesses the underlying value.
-
-    This function will panic if accessed from a different thread than the cell was created on.
-    */
+    /// Consumes the cell and returns the wrapped value with runtime thread checking.
+    ///
+    /// This is the safe way to extract the wrapped value from the cell. The method
+    /// will verify that the current thread matches the thread where the cell was created.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from a different thread than the one where this `SendCell`
+    /// was created.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SendCell;
+    /// use std::rc::Rc;
+    ///
+    /// let data = Rc::new("Hello, world!");
+    /// let cell = SendCell::new(data);
+    ///
+    /// // Extract the original value
+    /// let recovered_data = cell.into_inner();
+    /// assert_eq!(*recovered_data, "Hello, world!");
+    /// ```
     #[inline]
     pub fn into_inner(self) -> T {
         assert_eq!(self.thread_id, crate::sys::thread::current().id());
         unsafe { self.into_unchecked_inner() }
     }
 
-    /**
-    Create a new cell with a new value, that will be runtime-checked against the same
-    thread as the original cell.
-
-    This is useful to implement simple clone/copy operations on the cell.
-
-    # Safety
-    * You must verify that the new value is safe to use on the same thread as the original cell.
-    * Including that it can be dropped on that thread.
-    */
+    /// Creates a new cell with a different value, preserving the thread affinity.
+    ///
+    /// This creates a new `SendCell` that will be checked against the same thread
+    /// as the original cell. This is useful for implementing clone/copy operations
+    /// or transforming the wrapped value while maintaining thread safety.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - The new value is safe to use on the same thread as the original cell
+    /// - The new value can be safely dropped on the original thread
+    /// - Any invariants expected by the new value are maintained
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SendCell;
+    /// use std::rc::Rc;
+    ///
+    /// let original = SendCell::new(Rc::new(42));
+    /// 
+    /// // Create a new cell with a String on the same thread
+    /// let derived = unsafe { 
+    ///     original.preserving_cell_thread("Hello".to_string()) 
+    /// };
+    /// 
+    /// assert_eq!(original.get().as_ref(), &42);
+    /// assert_eq!(derived.get(), "Hello");
+    /// ```
     #[inline]
     pub unsafe fn preserving_cell_thread<U>(&self, new: U) -> SendCell<U> {
         SendCell {
@@ -110,13 +362,26 @@ impl <T> SendCell<T> {
         }
     }
 
-    /**
-    Copies the cell, creating a new cell that can be used on the same thread.
-
-    # Safety
-    This ought to be safe for types that implement Copy, since the copy constructor does not
-    involve custom code.
-*/
+    /// Copies the wrapped value, creating a new cell on the same thread.
+    ///
+    /// This method is safe for types that implement `Copy` because copying
+    /// such types doesn't involve custom code that could violate thread safety.
+    /// The new cell will have the same thread affinity as the original.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SendCell;
+    ///
+    /// let original = SendCell::new(42i32);
+    /// let copied = original.copying();
+    ///
+    /// assert_eq!(*original.get(), *copied.get());
+    /// 
+    /// // They are independent cells
+    /// std::mem::drop(original);
+    /// assert_eq!(*copied.get(), 42);
+    /// ```
     pub fn copying(&self) -> Self where T: Copy {
         unsafe { self.preserving_cell_thread(*self.get_unchecked()) }
     }
@@ -124,18 +389,40 @@ impl <T> SendCell<T> {
 }
 
 impl<T: Future> SendCell<T> {
-    /**
-    Converts the cell into a future that implements Send with runtime thread checking.
-    
-    Unlike UnsafeSendCell's into_future(), this method creates a future that will
-    panic if polled from a different thread than the one where the SendCell was created.
-    This provides safe cross-thread future usage by enforcing thread safety at runtime.
-    
-    # Panics
-    
-    The returned future will panic if polled from a different thread than the one
-    where this SendCell was created.
-    */
+    /// Converts the cell into a future that implements Send with runtime thread checking.
+    ///
+    /// This method consumes the `SendCell` and returns a [`SendFuture`] that implements
+    /// `Send` and can be moved between threads. However, the future will panic if polled
+    /// from a different thread than the one where the original `SendCell` was created.
+    ///
+    /// Unlike [`crate::UnsafeSendCell::into_future()`], this provides memory safety
+    /// through runtime checks.
+    ///
+    /// # Panics
+    ///
+    /// The returned future will panic if polled from a different thread than the one
+    /// where this `SendCell` was created.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SendCell;
+    /// use std::rc::Rc;
+    ///
+    /// // Create an async function that uses non-Send data
+    /// async fn non_send_async() -> i32 {
+    ///     let _local_data = Rc::new(42); // Not Send
+    ///     42
+    /// }
+    ///
+    /// let future = non_send_async();
+    /// let cell = SendCell::new(future);
+    /// let send_future = cell.into_future();
+    ///
+    /// // The future now implements Send
+    /// fn assert_send<T: Send>(_: T) {}
+    /// assert_send(send_future);
+    /// ```
     pub fn into_future(mut self) -> SendFuture<T> {
         SendFuture {
             inner: self.inner.take().expect("inner value missing"),
@@ -152,7 +439,8 @@ impl<T> Drop for SendCell<T> {
     }
 }
 
-//implement boilerplate
+// Trait implementations that delegate to the wrapped value
+// All of these perform runtime thread checking through get() and get_mut()
 impl<T: Debug> Debug for SendCell<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.get().fmt(f)
@@ -185,7 +473,8 @@ impl<T> DerefMut for SendCell<T> {
     }
 }
 
-//for eq, hash, etc, we generally rely on the underlying deref
+// Additional trait implementations
+// For comparison traits (Eq, Hash, etc.), we rely on Deref to the underlying type
 impl<T: Default> Default for SendCell<T> {
     fn default() -> SendCell<T> {
         SendCell::new(Default::default())
@@ -197,20 +486,61 @@ impl<T> From<T> for SendCell<T> {
     }
 }
 
-/**
-A future wrapper that implements Send with runtime thread checking.
-
-This wrapper allows futures to be used in contexts that require Send futures,
-while ensuring thread safety by checking that poll() is only called from the
-correct thread. Unlike UnsafeSendFuture, this provides safe cross-thread usage
-by panicking if accessed from the wrong thread.
-*/
+/// A future wrapper that implements Send with runtime thread checking.
+///
+/// `SendFuture<T>` wraps a future of type `T` and provides a `Send` implementation
+/// with runtime thread checking. The future remembers the thread it was created on
+/// and panics if polled from any other thread.
+///
+/// This wrapper allows non-Send futures to be used in contexts that require Send futures
+/// (such as being spawned on thread pools), while maintaining memory safety through
+/// runtime checks. Unlike [`crate::UnsafeSendFuture`], this provides safe cross-thread
+/// usage by panicking if accessed from the wrong thread.
+///
+/// # Examples
+///
+/// ```rust
+/// use send_cells::SendCell;
+/// use std::rc::Rc;
+/// use std::future::Future;
+/// use std::pin::Pin;
+/// use std::task::{Context, Poll};
+///
+/// // A future that is not Send
+/// struct NonSendFuture {
+///     data: Rc<i32>,
+/// }
+///
+/// impl Future for NonSendFuture {
+///     type Output = i32;
+///     
+///     fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+///         Poll::Ready(*self.data)
+///     }
+/// }
+///
+/// let future = NonSendFuture { data: Rc::new(42) };
+/// let cell = SendCell::new(future);
+/// let send_future = cell.into_future();
+///
+/// // Now it can be used in Send contexts
+/// fn requires_send_future<F: Future + Send>(_: F) {}
+/// requires_send_future(send_future);
+/// ```
+///
+/// # Panics
+///
+/// The `poll` method will panic if called from a different thread than the one
+/// where the original `SendCell` was created.
 #[derive(Debug)]
 pub struct SendFuture<T> {
     inner: UnsafeSendCell<T>,
     thread_id: ThreadId,
 }
 
+// SAFETY: SendFuture implements Send by providing runtime thread checking.
+// The wrapped future may not be Send, but we ensure safety by panicking
+// if poll() is called from the wrong thread.
 unsafe impl<T> Send for SendFuture<T> {}
 
 impl<T: Future> Future for SendFuture<T> {

@@ -1,10 +1,93 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 /*!
-A runtime-checked synchronous cell.
+A runtime-checked synchronous cell for safe shared access to non-Sync types.
 
-This provides safe synchronous access to mutex-protected data without the risk
-of holding guards across await points. Access is restricted to synchronous
-closures that automatically unlock when they return.
+This module provides [`SyncCell<T>`], which allows you to wrap non-Sync types
+and share them between threads safely using a mutex and closure-based access.
+Unlike [`crate::unsafe_sync_cell`], this module provides safe APIs with automatic
+mutex management.
+
+# Use Cases
+
+- Sharing non-Sync types (like `Rc<T>`, `RefCell<T>`) between threads safely
+- Protecting shared state without manually managing mutex guards
+- Preventing deadlocks by ensuring guards are automatically released
+- Working with synchronous APIs in multi-threaded contexts
+
+# Thread Safety Model
+
+[`SyncCell<T>`] uses a [`std::sync::Mutex`] internally to provide thread-safe access:
+- All access is through closures that receive references to the wrapped value
+- Mutex guards are automatically acquired and released by the closure methods
+- This prevents holding guards across await points or other blocking operations
+- The wrapped value itself doesn't need to implement `Sync`
+
+# Examples
+
+Basic usage with shared state:
+
+```rust
+use send_cells::SyncCell;
+use std::cell::RefCell;
+use std::thread;
+use std::sync::Arc;
+
+// RefCell<T> is not Sync, but SyncCell<RefCell<T>> is
+let data = RefCell::new(42);
+let cell = Arc::new(SyncCell::new(data));
+
+// Share between threads
+let cell_clone = Arc::clone(&cell);
+let handle = thread::spawn(move || {
+    cell_clone.with(|ref_cell| {
+        println!("Value in thread: {}", *ref_cell.borrow());
+    });
+});
+
+handle.join().unwrap();
+```
+
+Mutable access:
+
+```rust
+use send_cells::SyncCell;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::thread;
+
+let map = HashMap::new();
+let cell = Arc::new(SyncCell::new(map));
+
+let cell_clone = Arc::clone(&cell);
+thread::spawn(move || {
+    cell_clone.with_mut(|map| {
+        map.insert("key", "value");
+    });
+}).join().unwrap();
+
+cell.with(|map| {
+    assert_eq!(map.get("key"), Some(&"value"));
+});
+```
+
+# Avoiding Deadlocks
+
+The closure-based API automatically prevents common deadlock scenarios:
+
+```rust
+use send_cells::SyncCell;
+
+let cell = SyncCell::new(vec![1, 2, 3]);
+
+// Guards are automatically released when closures return
+cell.with(|vec| {
+    println!("Length: {}", vec.len());
+}); // Guard released here
+
+cell.with_mut(|vec| {
+    vec.push(4);
+}); // No deadlock - previous guard was released
+```
 */
 
 use std::fmt::{Debug, Formatter};
@@ -12,18 +95,86 @@ use std::sync::{Mutex, };
 use std::hash::{Hash, Hasher};
 use crate::unsafe_sync_cell::UnsafeSyncCell;
 
+/// A runtime-checked cell that allows sharing non-Sync types between threads.
+///
+/// `SyncCell<T>` wraps a value of type `T` (which may not implement `Sync`) and provides
+/// a `Sync` implementation using a mutex for thread-safe access. Access to the wrapped
+/// value is provided through closure-based methods that automatically manage the mutex.
+///
+/// Unlike [`crate::unsafe_sync_cell::UnsafeSyncCell`], this provides memory safety by using a real mutex
+/// and proper synchronization. The closure-based API prevents common issues like
+/// holding guards across await points or forgetting to release locks.
+///
+/// # Examples
+///
+/// Basic usage with a non-Sync type:
+///
+/// ```rust
+/// use send_cells::SyncCell;
+/// use std::cell::RefCell;
+/// use std::sync::Arc;
+/// use std::thread;
+///
+/// // RefCell<i32> is not Sync, but SyncCell<RefCell<i32>> is
+/// let data = RefCell::new(42);
+/// let cell = Arc::new(SyncCell::new(data));
+///
+/// let cell_clone = Arc::clone(&cell);
+/// let handle = thread::spawn(move || {
+///     cell_clone.with(|ref_cell| {
+///         assert_eq!(*ref_cell.borrow(), 42);
+///     });
+/// });
+///
+/// handle.join().unwrap();
+/// ```
+///
+/// Mutable access:
+///
+/// ```rust
+/// use send_cells::SyncCell;
+/// use std::collections::HashMap;
+///
+/// let map = HashMap::new();
+/// let cell = SyncCell::new(map);
+///
+/// cell.with_mut(|map| {
+///     map.insert("key", "value");
+/// });
+///
+/// cell.with(|map| {
+///     assert_eq!(map.get("key"), Some(&"value"));
+/// });
+/// ```
+///
+/// # Thread Safety
+///
+/// The cell implements both `Send` and `Sync` when the wrapped type implements `Send`.
+/// Access is always protected by the internal mutex, ensuring thread safety.
 pub struct SyncCell<T> {
     inner: UnsafeSyncCell<T>,
     mutex: Mutex<()>,
 }
 
 impl<T> SyncCell<T> {
-    /**
-    Creates a new synchronous cell.
-
-    This constructor will "remember" the current thread. Subsequent access
-    will be checked against the constructed value.
-    */
+    /// Creates a new `SyncCell` wrapping the given value.
+    ///
+    /// The value will be protected by an internal mutex, allowing safe shared
+    /// access from multiple threads through the closure-based access methods.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SyncCell;
+    /// use std::rc::Rc;
+    ///
+    /// let data = Rc::new("Hello, world!");
+    /// let cell = SyncCell::new(data);
+    ///
+    /// cell.with(|rc| {
+    ///     println!("{}", rc);
+    /// });
+    /// ```
     #[inline]
     pub fn new(value: T) -> SyncCell<T> {
         SyncCell {
@@ -32,19 +183,36 @@ impl<T> SyncCell<T> {
         }
     }
 
-    /**
-    Access the underlying value through a synchronous closure.
-
-    The closure receives a shared reference to the inner value and must
-    return synchronously. The mutex is automatically unlocked when the
-    closure returns.
-
-    # Panics
-
-    This function will panic if:
-    - Accessed from a different thread than the cell was created on
-    - The mutex is poisoned
-    */
+    /// Accesses the underlying value through a synchronous closure.
+    ///
+    /// The closure receives a shared reference to the wrapped value and must
+    /// return synchronously. The internal mutex is automatically acquired before
+    /// calling the closure and released when the closure returns.
+    ///
+    /// This method provides safe, synchronized access to the wrapped value from
+    /// any thread.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned (i.e., another thread panicked while
+    /// holding the lock).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SyncCell;
+    /// use std::collections::HashMap;
+    ///
+    /// let mut map = HashMap::new();
+    /// map.insert("key", "value");
+    /// let cell = SyncCell::new(map);
+    ///
+    /// let result = cell.with(|map| {
+    ///     map.get("key").copied()
+    /// });
+    ///
+    /// assert_eq!(result, Some("value"));
+    /// ```
     #[inline]
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         let _guard = self.mutex.lock().unwrap();
@@ -53,19 +221,37 @@ impl<T> SyncCell<T> {
         result
     }
 
-    /**
-    Access the underlying value mutably through a synchronous closure.
-
-    The closure receives a mutable reference to the inner value and must
-    return synchronously. The mutex is automatically unlocked when the
-    closure returns.
-
-    # Panics
-
-    This function will panic if:
-    - Accessed from a different thread than the cell was created on
-    - The mutex is poisoned
-    */
+    /// Accesses the underlying value mutably through a synchronous closure.
+    ///
+    /// The closure receives a mutable reference to the wrapped value and must
+    /// return synchronously. The internal mutex is automatically acquired before
+    /// calling the closure and released when the closure returns.
+    ///
+    /// This method provides safe, synchronized mutable access to the wrapped value
+    /// from any thread.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned (i.e., another thread panicked while
+    /// holding the lock).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SyncCell;
+    /// use std::collections::HashMap;
+    ///
+    /// let map = HashMap::new();
+    /// let cell = SyncCell::new(map);
+    ///
+    /// cell.with_mut(|map| {
+    ///     map.insert("key", "value");
+    /// });
+    ///
+    /// cell.with(|map| {
+    ///     assert_eq!(map.get("key"), Some(&"value"));
+    /// });
+    /// ```
     #[inline]
     pub fn with_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
         let _guard = self.mutex.lock().unwrap();
@@ -75,39 +261,104 @@ impl<T> SyncCell<T> {
         result
     }
 
-    /**
-    Consumes the cell and returns the inner value.
-
-    # Panics
-
-    This function will panic if accessed from a different thread than
-    the cell was created on.
-    */
+    /// Consumes the cell and returns the wrapped value.
+    ///
+    /// This method takes ownership of the `SyncCell` and returns the wrapped value
+    /// without any synchronization, since the cell is being consumed.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SyncCell;
+    /// use std::rc::Rc;
+    ///
+    /// let data = Rc::new("Hello, world!");
+    /// let cell = SyncCell::new(data);
+    ///
+    /// let recovered_data = cell.into_inner();
+    /// assert_eq!(*recovered_data, "Hello, world!");
+    /// ```
     #[inline]
     pub fn into_inner(self) -> T {
         self.inner.into_inner()
     }
     
+    /// Unsafely accesses the underlying value without acquiring the mutex.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - No other thread is currently accessing the value
+    /// - The access is properly synchronized through external means
+    /// - The mutex is not poisoned
+    ///
+    /// This method bypasses all synchronization and may lead to data races
+    /// if used incorrectly.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SyncCell;
+    ///
+    /// let cell = SyncCell::new(42);
+    /// 
+    /// // SAFETY: We're the only thread accessing this cell
+    /// let value = unsafe { cell.with_unchecked() };
+    /// assert_eq!(*value, 42);
+    /// ```
     pub unsafe fn with_unchecked(&self) -> &T {
-        // This is unsafe because it assumes the caller knows what they are doing.
-        // It does not check thread safety or mutex poisoning.
+        // SAFETY: Caller guarantees proper synchronization
         self.inner.get()
     }
     
+    /// Unsafely accesses the underlying value mutably without acquiring the mutex.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - No other thread is currently accessing the value
+    /// - The access is properly synchronized through external means  
+    /// - The mutex is not poisoned
+    /// - No other references (mutable or immutable) to the value exist
+    ///
+    /// This method bypasses all synchronization and may lead to data races
+    /// if used incorrectly.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use send_cells::SyncCell;
+    ///
+    /// let cell = SyncCell::new(42);
+    /// 
+    /// // SAFETY: We're the only thread accessing this cell
+    /// unsafe {
+    ///     *cell.with_mut_unchecked() = 100;
+    /// }
+    /// 
+    /// cell.with(|value| {
+    ///     assert_eq!(*value, 100);
+    /// });
+    /// ```
     pub unsafe fn with_mut_unchecked(&self) -> &mut T {
-        // This is unsafe because it assumes the caller knows what they are doing.
-        // It does not check thread safety or mutex poisoning.
+        // SAFETY: Caller guarantees proper synchronization
         self.inner.get_mut_unchecked()
     }
     
     
 }
 
+// SAFETY: SyncCell<T> can be Send when T: Send because the mutex ensures
+// that only one thread can access the inner value at a time.
 unsafe impl<T: Send> Send for SyncCell<T> {}
+
+// SAFETY: SyncCell<T> can be Sync when T: Send because the mutex provides
+// the necessary synchronization for shared access across threads.
 unsafe impl<T: Send> Sync for SyncCell<T> {}
 
 
-// Basic trait implementations
+// Trait implementations that use the closure-based access methods
+// These ensure proper synchronization by going through the mutex
 impl<T: Debug> Debug for SyncCell<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.with(|value| value.fmt(f))
