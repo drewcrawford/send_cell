@@ -572,7 +572,7 @@ mod tests {
 
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[test]
-    fn blank_test() { }
+    fn blank_test() {}
 
     #[test]
     fn test_future_functionality_preserved() {
