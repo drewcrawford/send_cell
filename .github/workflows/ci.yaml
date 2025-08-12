@@ -70,7 +70,9 @@ jobs:
 
       - name: Install nightly components
         if: matrix.channel == '+nightly' && !(env.GITEA_ACTIONS == 'true')
-        run: rustup ${{ matrix.channel }} component add rustfmt clippy
+        run: |
+          rustup ${{ matrix.channel }} component add rustfmt clippy
+          rustup ${{ matrix.channel }} component add rust-src
 
       - name: rustfmt
         run: cargo ${{ matrix.channel }} fmt --check
