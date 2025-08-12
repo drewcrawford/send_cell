@@ -1,4 +1,4 @@
-//SPDX-License-Identifier: MIT OR Apache-2.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 /*!
 A runtime-checked synchronous cell for safe shared access to non-Sync types.
 

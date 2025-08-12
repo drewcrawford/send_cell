@@ -1,4 +1,4 @@
-//SPDX-License-Identifier: MIT OR Apache-2.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 /*!
 Thread-safe cell types for sending and sharing non-Send/non-Sync types across thread boundaries.
 
