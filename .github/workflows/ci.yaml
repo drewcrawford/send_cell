@@ -31,9 +31,7 @@ jobs:
           key: target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.channel || 'stable'}}-${{ matrix.target || 'host' }}-${{ matrix.features || 'default' }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
           path: |
             target
-            ~/.cargo/bin # cache for wasm-bindgen-cli
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
+            ~/.cargo # cache wasm-bindgen-cli?
           restore-keys: |
             target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.channel || 'stable'}}-${{ matrix.target || 'host' }}-${{ matrix.features || 'default' }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
             target-${{ github.event.repository.name }}-${{ matrix.os }}-${{ matrix.channel || 'stable'}}-${{ matrix.target || 'host' }}-${{ matrix.features || 'default' }}
